@@ -2,11 +2,13 @@
 module Appmaker
   module Net
     class Server
-
       def initialize address, port
         @address, @port = address, port
-        @selector = ::NIO::Selector.new
+        @selector = ::NIO::Selector.new(:kqueue)
         @clients = Hash.new
+        @lock = Mutex.new
+
+        puts("Using #{@selector.backend} backend")
       end
 
       def start_listening handler_klass
@@ -22,31 +24,35 @@ module Appmaker
       end
 
       def iterate
+        new_clients = []
+        readables = []
+        writeables = []
+
+        clients = @clients.dup
         @selector.select do |monitor|
           if TCPServer === monitor.io
-            accept_client_connection monitor.io if monitor.readable?
+            new_clients << monitor.io if monitor.readable?
           elsif TCPSocket === monitor.io && monitor.readable?
-            @clients[monitor.io.fileno].notify_readable
+            readables << clients[monitor.io]
           elsif TCPSocket === monitor.io && monitor.writable?
-            @clients[monitor.io.fileno].notify_writeable
+            writeables << clients[monitor.io]
           end
         end
-      end
 
-      def register_write_intention connection
-        # FIXME: better handle this
-        # @selector.register connection.socket, :w
-      end
-
-      def register_read_intention connection
-        @selector.register connection.socket, :rw
+        writeables.each &:notify_writeable
+        readables.each &:notify_readable
+        new_clients.each { |io| accept_client_connection(io) }
       end
 
       def register_closed connection
-        @selector.deregister connection.socket
-        @clients.delete connection.socket.fileno
-
-        connection.socket.close
+        @lock.synchronize do
+          io = connection.socket
+          @clients.delete io
+          begin
+            io.close unless io.closed?
+          rescue IOError
+          end
+        end
       end
 
       private
@@ -55,10 +61,15 @@ module Appmaker
         client_socket = io.accept_nonblock exception: false
         return if client_socket == :wait_readable
 
-        fd = client_socket.fileno
-        @clients[fd] = Appmaker::Net::HttpConnection.new self, client_socket, @handler_klass
-      end
+        connection = nil
+        @lock.synchronize do
+          monitor = @selector.register(client_socket, :r)
+          connection = Appmaker::Net::HttpConnection.new self, monitor, @handler_klass
+          @clients[client_socket] = connection
+        end
 
+        connection.process_request
+      end
     end
   end
 end

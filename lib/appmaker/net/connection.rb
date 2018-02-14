@@ -15,19 +15,25 @@ module Appmaker
         end
       end
 
-      attr_reader :socket
+      attr_reader :socket, :server
 
-      def initialize server, socket
+      def initialize server, monitor
         @closed = false
         @server = server
-        @socket = socket
+        @monitor = monitor
+        @socket = monitor.io
+        @lock = Mutex.new
+
         @read_callback = nil
         @reading_buffer = []
         @writing_buffer = []
       end
 
       def write data, &finished
-        @writing_buffer << Chunk.new(data, &finished)
+        chunk = Chunk.new(data, &finished)
+        @lock.synchronize do
+          @writing_buffer << chunk
+        end
         _attempt_write
       end
 
@@ -37,14 +43,20 @@ module Appmaker
       end
 
       def close
-        _register_closed unless @closed
-        @closed = true
+        @lock.synchronize do
+          _register_closed unless @closed
+          @closed = true
+          on_close
+        end
       end
+
+      # To be overridden
+      def on_close; end
 
       def notify_readable
         return unless @read_callback && !@closed
         begin
-          data = @socket.read_nonblock 16
+          data = @socket.read_nonblock 1024
         rescue EOFError, Errno::ECONNRESET
           close
         end
@@ -58,7 +70,21 @@ module Appmaker
       private
 
       def _attempt_write
-        return if @writing_buffer.length == 0
+        locked = true
+        unless @lock.try_lock
+          # If we're not acquiring the lock, let at least
+          # announce that we want to write, so new attempts
+          # will be automatically made by the reactor.
+          _register_write_intention
+          return
+        end
+
+        if @writing_buffer.length == 0
+          @lock.unlock
+          return
+        end
+
+        has_remaining_data = true
 
         begin
           chunk = @writing_buffer[0]
@@ -70,6 +96,9 @@ module Appmaker
             chunk.data = pending_data
           else
             @writing_buffer.shift
+            @lock.unlock
+            locked = false
+            has_remaining_data = false
             chunk.notify_finished
           end
         rescue IO::WaitWritable
@@ -81,23 +110,28 @@ module Appmaker
           puts("EPROTOTYPE error")
           close
           return
+        ensure
+          @lock.unlock if locked
         end
 
-        _register_write_intention
+        if has_remaining_data && !@closed
+          _register_write_intention
+        elsif !has_remaining_data && !@closed
+          @monitor.remove_interest :w
+        end
       end
 
       def _register_closed
+        @monitor.close true
         @server.register_closed self
       end
 
       def _register_write_intention
-        return if @reggg
-        @reggg = true
-        @server.register_write_intention self
+        @monitor.add_interest :w
       end
 
       def _register_read_intention
-        @server.register_read_intention self
+        @monitor.add_interest :r
       end
 
     end

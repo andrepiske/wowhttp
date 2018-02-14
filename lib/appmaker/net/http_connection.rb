@@ -5,11 +5,13 @@ module Appmaker
       def initialize *args
         @request_handler_fabricator = args.pop
         super *args
+      end
+
+      def process_request
         start_header_reading
       end
 
-      def close
-        super
+      def on_close
         if @handler
           @handler.closed
           @handler = nil
@@ -21,7 +23,6 @@ module Appmaker
 
       def start_header_reading
         @state = :initial
-        # puts('lets get started')
         read { |data| _on_read_data data }
       end
 
