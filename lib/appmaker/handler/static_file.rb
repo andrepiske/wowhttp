@@ -55,7 +55,7 @@ module Appmaker
         @http_connection.write header
         @http_connection.write content do
           # puts('Finished!')
-          @http_connection.close
+          @http_connection.finish
         end
 
         true

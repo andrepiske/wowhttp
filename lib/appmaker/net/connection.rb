@@ -44,14 +44,9 @@ module Appmaker
 
       def close
         @lock.synchronize do
-          _register_closed unless @closed
-          @closed = true
-          on_close
+          _close_without_locking
         end
       end
-
-      # To be overridden
-      def on_close; end
 
       def notify_readable
         return unless @read_callback && !@closed
@@ -68,6 +63,15 @@ module Appmaker
       end
 
       private
+
+      # To be overridden
+      def on_close; end
+
+      def _close_without_locking
+        _register_closed unless @closed
+        @closed = true
+        on_close
+      end
 
       def _attempt_write
         locked = true
@@ -101,14 +105,21 @@ module Appmaker
             has_remaining_data = false
             chunk.notify_finished
           end
+        rescue IOError
+          if @socket.closed?
+            locked ? _close_without_locking : close
+            return
+          else
+            raise
+          end
         rescue IO::WaitWritable
         rescue Errno::EPIPE
           puts("BROKEN PIPE!")
-          close
+          locked ? _close_without_locking : close
           return
         rescue Errno::EPROTOTYPE
           puts("EPROTOTYPE error")
-          close
+          locked ? _close_without_locking : close
           return
         ensure
           @lock.unlock if locked

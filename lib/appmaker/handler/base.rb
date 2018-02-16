@@ -5,6 +5,20 @@ module Appmaker
       def initialize http_connection, request
         @http_connection = http_connection
         @request = request
+
+        if request.idempotent?
+          keepalive!
+        else
+          do_not_keepalive!
+        end
+      end
+
+      def keepalive!
+        @http_connection.recycle = true
+      end
+
+      def do_not_keepalive!
+        @http_connection.recycle = false
       end
 
       def make_base_response
@@ -12,7 +26,12 @@ module Appmaker
 
         resp.set_header 'Server', 'lolmao'
         resp.set_header 'Date', DateTime.now.rfc2822
-        resp.set_header 'Connection', 'close'
+
+        if @http_connection.recycle
+          resp.set_header 'Connection', 'keep-alive'
+        else
+          resp.set_header 'Connection', 'close'
+        end
 
         resp
       end
@@ -34,7 +53,7 @@ module Appmaker
 
         @http_connection.write response.full_header
         @http_connection.write data do
-          @http_connection.close
+          @http_connection.finish
         end
       end
 
@@ -43,6 +62,7 @@ module Appmaker
       end
 
       def closed
+        # binding.pry
         @http_connection = nil
       end
     end

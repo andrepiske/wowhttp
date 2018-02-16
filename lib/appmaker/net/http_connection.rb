@@ -2,6 +2,8 @@
 module Appmaker
   module Net
     class HttpConnection < Connection
+      attr_accessor :recycle
+
       def initialize *args
         @request_handler_fabricator = args.pop
         super *args
@@ -9,6 +11,14 @@ module Appmaker
 
       def process_request
         start_header_reading
+      end
+
+      def finish
+        if recycle
+          recycle_connection
+        else
+          close
+        end
       end
 
       def on_close
@@ -19,7 +29,20 @@ module Appmaker
         end
       end
 
+      def write_then_finish data
+        write data do
+          finish
+        end
+      end
+
       private
+
+      def recycle_connection
+        @lock.synchronize do
+          @handler.closed
+          @handler = nil
+        end
+      end
 
       def start_header_reading
         @state = :initial
@@ -48,6 +71,11 @@ module Appmaker
         # do nothing.
       end
 
+      def _onread_recycling data
+        @state = :initial
+        _onread_initial data
+      end
+
       def _onread_initial data
         return if data == nil
 
@@ -60,8 +88,23 @@ module Appmaker
               @line_reader.finish
               remaining_buffer = @line_reader.buffer.join
               @line_reader = nil
-              @state = :read_body
-              _on_read_data remaining_buffer if remaining_buffer.length > 0
+              next if @closed
+
+              # Handler finished processing, we now might either recycle or close the connection
+              if @handler == nil
+                if @request_builder.request.has_body?
+                  # Someone wants to ignore the content and just finish the request
+                  # We won't handle this case as it is kinda non-sense. Let's just close the connection instead
+                  close
+                else
+                  @state = :recycling
+                end
+              else
+                if @request_builder.request.has_body?
+                  @state = :read_body
+                  _on_read_data remaining_buffer if remaining_buffer.length > 0
+                end
+              end
             else
               @request_builder.feed_line line
             end
