@@ -62,7 +62,6 @@ module Appmaker
       end
 
       def closed
-        # binding.pry
         @http_connection = nil
       end
     end
