@@ -18,9 +18,10 @@ module Appmaker
         @ssl_ctx.cert = cert
         @ssl_ctx.cert_store = cert_store if cert_store != nil
 
-        @ssl_ctx.alpn_protocols = ['http/1.1']
+        @ssl_ctx.alpn_protocols = ['http/1.1', 'h2']
         @ssl_ctx.alpn_select_cb = lambda do |protocols|
-          'http/1.1'
+          'h2'
+          # 'http/1.1'
         end
       end
 

@@ -80,8 +80,27 @@ module Appmaker
         _onread_initial data
       end
 
+      # def _check_http2 data
+      #   return false if @http_version != :http2
+      #   # might have broken frames
+      #   return false unless data.length >= 24 && data[0...24].bytes == expected_preface
+      #   puts('Using http2!')
+      #   binding.pry
+      # end
+
       def _onread_initial data
         return if data == nil
+
+        if @http_version == :http2
+          if @frame_reader == nil
+            @frame_reader = Appmaker::Net::Http2StreamingBuffer.new do |hframe|
+              puts 'got a frame'
+              # binding.pry
+            end
+          end
+          @frame_reader.feed data
+          return
+        end
 
         if @line_reader == nil
           @request_builder = RequestBuilder.new

@@ -24,6 +24,7 @@ module Appmaker
         @socket = monitor.io
         @use_ssl = false
         @lock = Mutex.new
+        @http_version = :http11
 
         @read_callback = nil
         @reading_buffer = []
@@ -39,7 +40,8 @@ module Appmaker
 
         # FIXME: Use accept_nonblock instead
         @ssl_socket.accept
-        # proto = @ssl_socket.alpn_protocol
+        proto = @ssl_socket.alpn_protocol
+        @http_version = :http2 if proto == 'h2'
       end
 
       def write data, &finished
