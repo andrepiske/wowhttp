@@ -20,6 +20,7 @@ module Appmaker
           '.html' => 'text/html',
           '.mp4' => 'video/mp4',
           '.jpg' => 'image/jpeg',
+          '.js' => 'text/javascript',
         }
         mime_type = types.fetch File.extname(file_path), 'application/octet-stream'
 
@@ -48,6 +49,15 @@ module Appmaker
         end
 
         response.set_header 'Content-Length', content.length
+        # response.set_header 'Transfer-Encoding', 'chunked'
+        #
+        # response.set_header 'Cache-Control', 'public'
+        #
+        # size_hex = content.length.to_s(16)
+        # answer_content = "#{size_hex}\r\n#{content}\r\n0\r\n\r\n".encode('ASCII-8BIT')
+        #
+        # pc = content.bytes.map { |c| "1\r\n#{c.chr}\r\n" }.join('')
+        # answer_content = "#{pc}0\r\n\r\n".encode('ASCII-8BIT')
 
         header = response.full_header
         # puts("Answering with #{content.length} bytes with header #{header}")

@@ -1,0 +1,9 @@
+
+/some_code/ssl_key_password
+/some_code/public
+/some_code/keys
+
+yarn-error.log
+.cache
+.DS_Store
+

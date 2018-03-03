@@ -2,15 +2,11 @@
 module Appmaker
   module Handler
     class Base
+      attr_reader :http_connection, :request
+
       def initialize http_connection, request
         @http_connection = http_connection
         @request = request
-
-        if request.idempotent?
-          keepalive!
-        else
-          do_not_keepalive!
-        end
       end
 
       def keepalive!

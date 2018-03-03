@@ -54,7 +54,11 @@ module Appmaker
       end
 
       def _finished_reading_headers
-        @handler = _create_request_handler self, @request_builder.request
+        request = @request_builder.request
+        @handler = _create_request_handler self, request
+        @recycle = request.idempotent?
+        head = request.ordered_headers.map { |k, v| "\n\t\t#{k}: #{v}" }.join('')
+        puts("\nHandle a #{request.verb} #{request.path} with:#{head}")
         @handler.handle_request
       end
 
