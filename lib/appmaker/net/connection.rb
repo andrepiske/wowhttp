@@ -22,11 +22,24 @@ module Appmaker
         @server = server
         @monitor = monitor
         @socket = monitor.io
+        @use_ssl = false
         @lock = Mutex.new
 
         @read_callback = nil
         @reading_buffer = []
         @writing_buffer = []
+      end
+
+      def use_ssl ssl_ctx
+        @ssl_ctx = ssl_ctx
+        @use_ssl = true
+
+        @ssl_socket = ::OpenSSL::SSL::SSLSocket.new(@socket, @ssl_ctx)
+        @ssl_socket.sync_close = true
+
+        # FIXME: Use accept_nonblock instead
+        @ssl_socket.accept
+        # proto = @ssl_socket.alpn_protocol
       end
 
       def write data, &finished
@@ -51,7 +64,7 @@ module Appmaker
       def notify_readable
         return unless @read_callback && !@closed
         begin
-          data = @socket.read_nonblock 1024
+          data = _iosocket.read_nonblock 1024
         rescue EOFError, Errno::ECONNRESET
           close
         end
@@ -94,7 +107,7 @@ module Appmaker
           chunk = @writing_buffer[0]
           data = chunk.data
           wanted_length = data.length
-          written_length = @socket.write_nonblock data
+          written_length = _iosocket.write_nonblock data
           if written_length < wanted_length
             pending_data = data[written_length..-1]
             chunk.data = pending_data
@@ -106,7 +119,7 @@ module Appmaker
             chunk.notify_finished
           end
         rescue IOError
-          if @socket.closed?
+          if _iosocket.closed?
             locked ? _close_without_locking : close
             return
           else
@@ -145,6 +158,13 @@ module Appmaker
         @monitor.add_interest :r
       end
 
+      def _iosocket
+        if @use_ssl
+          @ssl_socket
+        else
+          @socket
+        end
+      end
     end
   end
 end

@@ -11,6 +11,19 @@ module Appmaker
         puts("Using #{@selector.backend} backend")
       end
 
+      def configure_ssl(cert, key, cert_store=nil)
+        @ssl_ctx = OpenSSL::SSL::SSLContext.new :TLSv1_2_server
+
+        @ssl_ctx.key = key
+        @ssl_ctx.cert = cert
+        @ssl_ctx.cert_store = cert_store if cert_store != nil
+
+        @ssl_ctx.alpn_protocols = ['http/1.1']
+        @ssl_ctx.alpn_select_cb = lambda do |protocols|
+          'http/1.1'
+        end
+      end
+
       def start_listening handler_klass
         @handler_klass = handler_klass
         @tcp_server = TCPServer.new @address, @port
@@ -65,6 +78,7 @@ module Appmaker
         @lock.synchronize do
           monitor = @selector.register(client_socket, :r)
           connection = Appmaker::Net::HttpConnection.new self, monitor, @handler_klass
+          connection.use_ssl(@ssl_ctx) if @ssl_ctx
           @clients[client_socket] = connection
         end
 
