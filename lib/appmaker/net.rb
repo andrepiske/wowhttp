@@ -9,3 +9,4 @@ require 'appmaker/net/request_builder'
 require 'appmaker/net/http_connection'
 
 require 'appmaker/net/server'
+require 'appmaker/net/h2'
