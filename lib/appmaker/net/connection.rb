@@ -59,6 +59,7 @@ module Appmaker
       end
 
       def notify_writeable
+        on_writeable
         _attempt_write
       end
 
@@ -66,6 +67,9 @@ module Appmaker
 
       # To be overridden
       def on_close; end
+
+      # To be overridden
+      def on_writeable; end
 
       def _close_without_locking
         _register_closed unless @closed

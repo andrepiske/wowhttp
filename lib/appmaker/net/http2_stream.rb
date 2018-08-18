@@ -5,12 +5,15 @@ module Appmaker
       attr_accessor :sid
       attr_accessor :state
       attr_accessor :connection # the "real" connection behind this
+      attr_accessor :window_size # flow-control window size
+      attr_reader :gear
 
       def initialize(sid, connection, request_handler_fabricator)
         @state = :idle
         @sid = sid
         @connection = connection
         @request_handler_fabricator = request_handler_fabricator
+        @window_size = 65535
       end
 
       def receive_headers headers, flags:
@@ -37,6 +40,43 @@ module Appmaker
 
       def send_header_and_finish response, &block
         send_header response, end_stream: true, &block
+      end
+
+      def increase_window_size increment
+        @window_size += increment
+      end
+
+      # We can write again, so let's make the gear turn!
+      def turn_gear
+        return if @gear == nil
+        max_frame_size = connection.settings[:SETTINGS_MAX_FRAME_SIZE]
+        limit = [@window_size, connection.window_size, max_frame_size].min
+        @gear.notify_writeable limit
+      end
+
+      def geared_send &tap
+        sink = proc do |data, finished: false|
+          if data != nil
+            @window_size -= data.length
+            connection.window_size -= data.length
+            # puts("Sending geared #{data.length} bytes")
+            send_data_frame data, end_stream: finished
+          end
+          if finished
+            self.on_close
+          end
+        end
+        @gear = Net::Gear::ProcGear.new sink, &tap
+        connection.register_gear @gear
+        @gear
+      end
+
+      def send_data_frame data, end_stream: false
+        writer = H2::BitWriter.new
+        writer.write_bytes data
+        frame = make_frame :DATA, writer
+        frame.flags = 0x01 if end_stream
+        connection.send_frame frame
       end
 
       def write_then_finish content, &block
@@ -94,9 +134,10 @@ module Appmaker
         connection.send_frame frame, &block
       end
 
-      # def write data
-      #   connection.stream_write sid, data
-      # end
+      def write data, &block
+        raise "Cannot write to geared stream!" if @gear
+        send_data_frame data, &block
+      end
 
       private
 

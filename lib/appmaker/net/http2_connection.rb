@@ -3,6 +3,7 @@ module Appmaker
   module Net
     class Http2Connection < Connection
       attr_accessor :settings
+      attr_accessor :window_size # flow-control window size
 
       def initialize *args
         @request_handler_fabricator = args.pop
@@ -18,6 +19,10 @@ module Appmaker
         @hpack_remote_context = H2::HpackContext.new 4096
         @h2streams = {}
         super *args
+      end
+
+      def register_gear gear
+        _register_write_intention unless @closed
       end
 
       def go!
@@ -45,14 +50,7 @@ module Appmaker
         writer.write_int32 0x08 # CANCEL
         frame = make_frame :RST_STREAM, writer
         send_frame frame do
-          mark_stream_closed
-        end
-      end
-
-      def on_close
-        puts("CONNECTION H2 CLOSED")
-        @h2streams.each do |sid, stream|
-          stream.close
+          mark_stream_closed sid
         end
       end
 
@@ -107,7 +105,31 @@ module Appmaker
         ]
       end
 
+      def notify_writeable
+        turn_gears
+      end
+
       private
+
+      def on_close
+        puts("CONNECTION H2 CLOSED")
+        streams = @h2streams.map { |sid, stream| stream }
+        streams.each(&:on_close)
+      end
+
+      def turn_gears
+        remaining = 0
+        @h2streams.each do |sid, stream|
+          remaining += 1 if stream.gear != nil && stream.state != :closed
+          stream.turn_gear
+        end
+        _register_write_intention if remaining > 0 && !@closed
+        remaining
+      end
+
+      def increase_window_size increment
+        @window_size += increment
+      end
 
       def _fr_to_stream fr
         _stream_from_identifier fr.stream_identifier
@@ -117,6 +139,7 @@ module Appmaker
         stream = @h2streams[sid]
         if stream == nil
           stream = Http2Stream.new(sid, self, @request_handler_fabricator)
+          stream.window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
           @h2streams[sid] = stream
         end
         stream
@@ -153,7 +176,7 @@ module Appmaker
       def _handle_h2_rst_stream_frame fr
         reader = H2::BitReader.new fr.payload
         error_code = reader.read_int32
-        puts("Got RST_STREAM with error code #{error_code}")
+        puts("Got RST_STREAM with error code #{error_code}") unless error_code == 0x08 # 8 = CANCEL
         stream = @h2streams[fr.stream_identifier]
         stream.on_close
       end
@@ -171,7 +194,18 @@ module Appmaker
       def _handle_h2_window_update_frame fr
         reader = H2::BitReader.new(fr.payload)
         increment = (reader.read_int32 & 0x7FFFFFFF)
-        puts("Window size increment: #{increment}")
+        print("Window size increment: #{increment} ")
+        if fr.stream_identifier == 0
+          puts("for the connection")
+          increase_window_size increment
+        else
+          stream = @h2streams[fr.stream_identifier]
+          if stream
+            puts("for stream #{fr.stream_identifier}")
+            stream.increase_window_size increment
+          end
+        end
+        turn_gears
       end
 
       def _handle_h2_header_frame fr
@@ -234,6 +268,11 @@ module Appmaker
           settings[_h2_settingtype_to_sym(id)] = value
         end
         puts("Got some settings for stream #{fr.stream_identifier}, sending ACK")
+
+        if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != @window_size
+          @window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+          puts("Initial window size changed to = #{@window_size}")
+        end
 
         ack_frame = H2::Frame.new(:SETTINGS, 1, 0, 0, '')
         send_frame ack_frame

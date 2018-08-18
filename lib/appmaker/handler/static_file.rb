@@ -74,7 +74,14 @@ module Appmaker
 
         # binding.pry
         @http_connection.send_header response
-        @http_connection.write_then_finish content
+
+        cursor = 0
+        @http_connection.geared_send do |limit, send_proc|
+          limit = [1024, limit].min
+          s = cursor
+          cursor += limit
+          send_proc.call content[s...(s + limit)], finished: (cursor >= content.length)
+        end
 
         true
       end
