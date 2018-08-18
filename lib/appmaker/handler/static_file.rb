@@ -10,6 +10,16 @@ module Appmaker
         return false unless File.file? file_path
 
         response = make_base_response
+        file_mtime = File.mtime(file_path).to_datetime
+
+        if @request.headers_hash['if-modified-since']
+          if_modified_since = DateTime.parse(@request.headers_hash['if-modified-since'])
+          if file_mtime <= if_modified_since
+            response.code = 304
+            @http_connection.send_header_and_finish response
+            return true
+          end
+        end
 
         # puts("Will serve file #{file_path}")
         content = File.read(file_path).force_encoding('ASCII-8BIT')
@@ -47,6 +57,9 @@ module Appmaker
           response.code = 206
           response.set_header 'Content-Range', "bytes #{start_offset}-#{end_offset}/#{full_length}"
         end
+
+        # response.set_header 'Cache-Control', 'public, max-age=20'
+        response.set_header 'Last-Modified', file_mtime.rfc2822
 
         response.set_header 'Content-Length', content.length
         # response.set_header 'Transfer-Encoding', 'chunked'
