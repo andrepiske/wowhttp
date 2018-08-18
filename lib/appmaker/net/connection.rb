@@ -140,7 +140,7 @@ module Appmaker
           @lock.unlock if locked
         end
 
-        if has_remaining_data && !@closed
+        if (has_remaining_data || @writing_buffer.length > 0) && !@closed
           _register_write_intention
         elsif !has_remaining_data && !@closed
           @monitor.remove_interest :w
