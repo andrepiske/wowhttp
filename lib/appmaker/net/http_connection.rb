@@ -9,7 +9,7 @@ module Appmaker
         super *args
       end
 
-      def process_request
+      def go!
         start_header_reading
       end
 
@@ -33,6 +33,16 @@ module Appmaker
         write data do
           finish
         end
+      end
+
+      def send_header response, &block
+        phrase = Response::CODE_TO_REASON_PHRASE_MAPPING.fetch response.code, 'Whatever'
+        firstline = "HTTP/1.1 #{response.code} #{phrase}"
+        headers = response.headers.map do |k, v|
+          "#{k}: #{v}"
+        end.join("\r\n")
+
+        write "#{firstline}\r\n#{headers}\r\n\r\n", &block
       end
 
       private
@@ -88,81 +98,8 @@ module Appmaker
       #   binding.pry
       # end
 
-      def _handle_h2_frame fr
-        if fr.type == :SETTINGS
-          _handle_h2_settings_frame fr
-        elsif fr.type == :HEADERS
-          _handle_h2_header_frame fr
-        else
-          puts("frame of type #{fr.type}")
-        end
-      end
-
-      def _handle_h2_header_frame fr
-        flag_end_stream = (fr.flags & 0x01) != 0
-        flag_end_headers = (fr.flags & 0x04) != 0
-        flag_padded = (fr.flags & 0x08) != 0
-        flag_priority = (fr.flags & 0x20) != 0
-        hb_index = 0
-        hb_index += 1 if flag_padded
-        hb_index += 5 if flag_priority
-
-        header_data = fr.payload[hb_index..-1]
-        decoder = H2::HpackDecoder.new(header_data)
-        headers = decoder.decode_all
-
-        str_flags = {
-          'end_stream' => flag_end_stream,
-          'end_headers' => flag_end_headers,
-          'padded' => flag_padded,
-          'priority' => flag_priority
-        }.select { |k, v| v }.map { |k, v| k }.join(',')
-        puts("Reader headers: #{headers} with flags=#{str_flags}")
-      end
-
-      def _h2_settingtype_to_sym id
-        {
-          0x01 => :SETTINGS_HEADER_TABLE_SIZE,
-          0x02 => :SETTINGS_ENABLE_PUSH,
-          0x03 => :SETTINGS_MAX_CONCURRENT_STREAMS,
-          0x04 => :SETTINGS_INITIAL_WINDOW_SIZE,
-          0x05 => :SETTINGS_MAX_FRAME_SIZE,
-          0x06 => :SETTINGS_MAX_HEADER_LIST_SIZE,
-        }[id]
-      end
-
-      def _handle_h2_settings_frame fr
-        is_ack = ((fr.flags & 1) == 1)
-        if is_ack
-          puts "ACKing the settings ;)"
-          return
-        end
-
-        @h2_settings ||= {}
-
-        num_params = fr.payload_length / 6
-        (0...num_params).each do |idx|
-          offset = idx * 6
-          id = fr.payload[offset...offset+2].pack('C*').unpack1('S>')
-          value = fr.payload[offset+2...offset+6].pack('C*').unpack1('I>')
-          @h2_settings[_h2_settingtype_to_sym(id)] = value
-        end
-        puts("got some settings over here!")
-        # binding.pry
-      end
-
       def _onread_initial data
         return if data == nil
-
-        if @http_version == :http2
-          if @frame_reader == nil
-            @frame_reader = Appmaker::Net::Http2StreamingBuffer.new do |hframe|
-              _handle_h2_frame hframe
-            end
-          end
-          @frame_reader.feed data
-          return
-        end
 
         if @line_reader == nil
           @request_builder = RequestBuilder.new

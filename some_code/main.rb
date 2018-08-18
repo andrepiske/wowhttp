@@ -80,7 +80,7 @@ class TheHandler < Appmaker::Handler::Base
         # 'you?',
       ].take(am)
 
-      conn.write response.full_header
+      conn.send_header response
 
       chunks.each do |ck|
         len = ck.length.to_s 0x10

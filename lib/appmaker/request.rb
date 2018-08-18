@@ -1,13 +1,19 @@
 # frozen_string_literal: true
 module Appmaker
   class Request
+    extend Forwardable
+
     attr_accessor :verb
     attr_accessor :path
-    attr_accessor :ordered_headers, :headers_hash
+    # attr_accessor :ordered_headers, :headers_hash
+    attr_accessor :headers
+
+    def_delegators :@headers, :ordered_headers, :headers_hash
 
     def initialize
-      @ordered_headers = []
-      @headers_hash = {}
+      # @ordered_headers = []
+      # @headers_hash = {}
+      @headers = Semantic::HeadersStore.new(:request)
     end
 
     def idempotent?
@@ -21,7 +27,7 @@ module Appmaker
     end
 
     def has_body?
-      @headers_hash['transfer-encoding'] != nil || @headers_hash['content-length'] != nil
+      headers_hash['transfer-encoding'] != nil || headers_hash['content-length'] != nil
     end
 
     def verb_allows_body?

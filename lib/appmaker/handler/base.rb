@@ -22,6 +22,8 @@ module Appmaker
 
         resp.set_header 'Server', 'lolmao'
         resp.set_header 'Date', DateTime.now.rfc2822
+        resp.set_header 'Accept-CH', 'device-memory, dpr, width, viewport-width, rtt, downlink, ect'
+        resp.set_header 'Accept-CH-Lifetime', '300'
 
         if @http_connection.recycle
           resp.set_header 'Connection', 'keep-alive'
@@ -47,10 +49,8 @@ module Appmaker
         response.set_header 'Content-Length', data.length
         response.set_header 'Content-Type', mime_type
 
-        @http_connection.write response.full_header
-        @http_connection.write data do
-          @http_connection.finish
-        end
+        @http_connection.send_header response
+        @http_connection.write_then_finish data
       end
 
       def call

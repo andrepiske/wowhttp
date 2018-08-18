@@ -34,8 +34,6 @@ module Appmaker
     class Http2StreamingBuffer
       EXPECTED_PREFACE = [0x50,0x52,0x49,0x20,0x2a,0x20,0x48,0x54,0x54,0x50,0x2f,0x32,0x2e,0x30,0x0d,0x0a,0x0d,0x0a,0x53,0x4d,0x0d,0x0a,0x0d,0x0a]
 
-      H2Frame = Struct.new(:type, :flags, :payload_length, :stream_identifier, :payload)
-
       def initialize &emit_callback
         @emit_callback = emit_callback
         @state = :hope_for_preface
@@ -85,7 +83,7 @@ module Appmaker
           stream_identifier = header[5..-1].pack('C*').unpack1('I>')
           # TODO: remove leftmost bit from stream_identifier
           raise "Invalid frame type: #{header[3]}" if frame_type == nil
-          @frame = H2Frame.new(frame_type, frame_flags, payload_length, stream_identifier, nil)
+          @frame = H2::Frame.new(frame_type, frame_flags, payload_length, stream_identifier, nil)
           @buffer = @buffer[9..-1]
 
           if payload_length > 0

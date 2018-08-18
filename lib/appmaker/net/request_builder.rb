@@ -1,6 +1,4 @@
 # frozen_string_literal: true
-require 'cgi'
-
 module Appmaker
   module Net
     class RequestBuilder

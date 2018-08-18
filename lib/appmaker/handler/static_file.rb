@@ -59,14 +59,9 @@ module Appmaker
         # pc = content.bytes.map { |c| "1\r\n#{c.chr}\r\n" }.join('')
         # answer_content = "#{pc}0\r\n\r\n".encode('ASCII-8BIT')
 
-        header = response.full_header
-        # puts("Answering with #{content.length} bytes with header #{header}")
-
-        @http_connection.write header
-        @http_connection.write content do
-          # puts('Finished!')
-          @http_connection.finish
-        end
+        # binding.pry
+        @http_connection.send_header response
+        @http_connection.write_then_finish content
 
         true
       end

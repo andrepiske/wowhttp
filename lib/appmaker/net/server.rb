@@ -75,15 +75,16 @@ module Appmaker
         client_socket = io.accept_nonblock exception: false
         return if client_socket == :wait_readable
 
+        fabricator = ConnectionFabricator.new self, @handler_klass
+
         connection = nil
         @lock.synchronize do
           monitor = @selector.register(client_socket, :r)
-          connection = Appmaker::Net::HttpConnection.new self, monitor, @handler_klass
-          connection.use_ssl(@ssl_ctx) if @ssl_ctx
+          connection = fabricator.fabricate_connection monitor, @ssl_ctx
           @clients[client_socket] = connection
         end
 
-        connection.process_request
+        connection.go!
       end
     end
   end

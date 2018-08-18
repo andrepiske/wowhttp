@@ -59,12 +59,5 @@ module Appmaker
     def set_header key, value
       @headers[key] = value
     end
-
-    def full_header
-      phrase = CODE_TO_REASON_PHRASE_MAPPING.fetch @code, 'Whatever'
-      firstline = "HTTP/1.1 #{@code} #{phrase}"
-      headers = @headers.map { |k, v| "#{k}: #{v}" }.join("\r\n")
-      "#{firstline}\r\n#{headers}\r\n\r\n"
-    end
   end
 end

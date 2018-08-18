@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 module Appmaker::Net::H2
   class BitReader
     attr_accessor :cursor
@@ -7,13 +8,15 @@ module Appmaker::Net::H2
       set_buffer data
     end
 
-    def read_integer
-      finish_byte
+    def read_integer prefix
+      value = finish_byte
+      raise "Unimplemented integer>127 decoding" if value == 127 # TODO:
+      value
     end
 
     def read_string
       h = read_bit
-      str_length = read_integer
+      str_length = read_integer 7
       bytes = read_bytes str_length
       if h == 1 # if it is huffman coded, then decode it
         StringDecoder.decode_string bytes
@@ -24,6 +27,16 @@ module Appmaker::Net::H2
 
     def eof?
       @cursor >= @buffer.length * 8
+    end
+
+    def read_int32
+      d = read_bytes 4
+      (d[0] << 24) + (d[1] << 16) + (d[2] << 8) + d[3]
+    end
+
+    def read_int24
+      d = read_bytes 3
+      (d[0] << 16) + (d[1] << 8) + d[2]
     end
 
     def read_bit
