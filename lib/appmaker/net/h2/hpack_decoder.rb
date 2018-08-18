@@ -39,8 +39,6 @@ module Appmaker::Net::H2
         new_max_size = reader.read_integer 5
         @ctx.resize_dynamic_table new_max_size
         nil
-      else
-        puts("Invalid kind: ", kind)
       end
     end
 
