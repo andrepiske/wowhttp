@@ -10,7 +10,15 @@ module Appmaker::Net::H2
 
     def read_integer prefix
       value = finish_byte
-      raise "Unimplemented integer>127 decoding" if value == 127 # TODO:
+      if value == (1 << prefix) - 1
+        m = 0
+        loop do
+          b = read_byte
+          value += (b & 127) * (2 ** m)
+          m += 7
+          break if (b & 128 != 128)
+        end
+      end
       value
     end
 
@@ -27,6 +35,10 @@ module Appmaker::Net::H2
 
     def eof?
       @cursor >= @buffer.length * 8
+    end
+
+    def read_byte
+      read_bytes(1)[0]
     end
 
     def read_int32
