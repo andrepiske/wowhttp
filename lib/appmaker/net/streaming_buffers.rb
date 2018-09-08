@@ -69,7 +69,8 @@ module Appmaker
           0x05 => :PUSH_PROMISE,
           0x06 => :PING,
           0x07 => :GOAWAY,
-          0x08 => :WINDOW_UPDATE
+          0x08 => :WINDOW_UPDATE,
+          0x09 => :CONTINUATION
         }[type]
       end
 
