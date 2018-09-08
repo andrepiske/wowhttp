@@ -36,6 +36,12 @@ module Appmaker
       end
 
       def go!
+        # We must send a SETTINGS frame before anything else, as per RFC:
+        #   The server connection preface consists of a potentially empty
+        #   SETTINGS frame (Section 6.5) that MUST be the first frame the server
+        #   sends in the HTTP/2 connection.
+        _send_initial_settings
+
         @frame_reader = Appmaker::Net::Http2StreamingBuffer.new do |hframe|
           _handle_h2_frame hframe
         end
@@ -154,6 +160,13 @@ module Appmaker
           @h2streams[sid] = stream
         end
         stream
+      end
+
+      def _send_initial_settings
+        frame = make_frame :SETTINGS, nil
+        send_frame frame do
+          puts "First SETTINGS sent"
+        end
       end
 
       def _handle_h2_frame fr
