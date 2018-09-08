@@ -4,11 +4,30 @@ module Appmaker
     class Server
       def initialize address, port
         @address, @port = address, port
-        @selector = ::NIO::Selector.new(:kqueue)
+
+        backend = (RUBY_ENGINE == 'jruby' ? :java : :kqueue)
+        @selector = ::NIO::Selector.new(backend)
         @clients = Hash.new
         @lock = Mutex.new
+        @signaled = false
+
+        Signal.trap 'INT' do
+          dump_diagnosis_info
+          exit(1) if @signaled
+          @signaled = true
+        end
 
         puts("Using #{@selector.backend} backend")
+      end
+
+      def dump_diagnosis_info
+        puts('## DIAGNOSIS DUMP BEGIN')
+        puts("Has #{@clients.length} clients. Now printing client info:")
+        @clients.values.each_with_index do |cli, index|
+          puts('## DIAG FOR CLIENT #{index}:')
+          cli.dump_diagnosis_info
+        end
+        puts('## DIAGNOSIS DUMP END')
       end
 
       def configure_ssl(cert, key, cert_store=nil)
@@ -18,10 +37,11 @@ module Appmaker
         @ssl_ctx.cert = cert
         @ssl_ctx.cert_store = cert_store if cert_store != nil
 
-        @ssl_ctx.alpn_protocols = ['http/1.1', 'h2']
+        allowed_protocolos = ['h2', 'http/1.1']
+
+        @ssl_ctx.alpn_protocols = allowed_protocolos.dup
         @ssl_ctx.alpn_select_cb = lambda do |protocols|
-          'h2'
-          # 'http/1.1'
+          (allowed_protocolos & protocols).first
         end
       end
 
@@ -34,6 +54,7 @@ module Appmaker
       def run_forever
         loop do
           iterate
+          # break if @signaled
         end
       end
 
@@ -52,6 +73,7 @@ module Appmaker
             writeables << clients[monitor.io]
           end
         end
+        binding.pry if @signaled
 
         writeables.each &:notify_writeable
         readables.each &:notify_readable

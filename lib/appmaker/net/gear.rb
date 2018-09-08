@@ -3,4 +3,5 @@ module Appmaker::Net
   end
 end
 
-require 'appmaker/net/gear/sending_gear'
+require 'appmaker/net/gear/proc_gear'
+require 'appmaker/net/gear/buffered_gear'

@@ -21,6 +21,16 @@ module Appmaker
         super *args
       end
 
+      def dump_diagnosis_info
+        puts("HTTP/2 connection in state=#{@state}")
+        puts("Settings = #{@settings}")
+        puts("Has #{@h2streams.length} streams")
+        puts("Now dumping streams:")
+        @h2streams.values.each do |s|
+          s.dump_diagnosis_info
+        end
+      end
+
       def register_gear gear
         _register_write_intention unless @closed
       end
@@ -44,7 +54,7 @@ module Appmaker
         @h2streams.delete sid
       end
 
-      def close_stream sid
+      def send_rst_stream sid
         stream = @h2streams[sid]
         writer = H2::BitWriter.new
         writer.write_int32 0x08 # CANCEL
@@ -105,8 +115,17 @@ module Appmaker
         ]
       end
 
-      def notify_writeable
+      def on_writeable
         turn_gears
+      end
+
+      def has_write_intention?
+        return true if super
+        @h2streams.values.any?(&:intents_to_write?)
+      end
+
+      def change_window_size_by delta
+        @window_size += delta
       end
 
       private
@@ -114,28 +133,20 @@ module Appmaker
       def on_close
         puts("CONNECTION H2 CLOSED")
         streams = @h2streams.map { |sid, stream| stream }
-        streams.each(&:on_close)
+        streams.each(&:on_rst_stream)
       end
 
       def turn_gears
         remaining = 0
         @h2streams.each do |sid, stream|
-          remaining += 1 if stream.gear != nil && stream.state != :closed
+          remaining += 1 if stream.intents_to_write?
           stream.turn_gear
         end
-        _register_write_intention if remaining > 0 && !@closed
+
         remaining
       end
 
-      def increase_window_size increment
-        @window_size += increment
-      end
-
-      def _fr_to_stream fr
-        _stream_from_identifier fr.stream_identifier
-      end
-
-      def _stream_from_identifier sid
+      def get_or_create_stream sid
         stream = @h2streams[sid]
         if stream == nil
           stream = Http2Stream.new(sid, self, @request_handler_fabricator)
@@ -148,22 +159,19 @@ module Appmaker
       def _handle_h2_frame fr
         puts("Received frame #{fr.type}")
 
-        if fr.type == :SETTINGS
-          _handle_h2_settings_frame fr
-        elsif fr.type == :HEADERS
-          _handle_h2_header_frame fr
-        elsif fr.type == :WINDOW_UPDATE
-          _handle_h2_window_update_frame fr
-        elsif fr.type == :GOAWAY
-          _handle_h2_goaway_frame fr
-        elsif fr.type == :RST_STREAM
-          _handle_h2_rst_stream_frame fr
-        elsif fr.type == :PING
-          _handle_h2_ping_frame fr
-        else
+        unavailable_type = [:DATA, :PUSH_PROMISE, :CONTINUATION]
+        if unavailable_type.include?(fr.type)
           puts("ERROR: Don't know how to process frame")
           binding.pry
         end
+
+        method_name = "_handle_h2_#{fr.type.to_s.downcase}_frame"
+        send(method_name, fr)
+      end
+
+      def _handle_h2_priority_frame fr
+        reader = H2::BitReader.new fr.payload
+        # FIXME: no-op for now
       end
 
       def _handle_h2_ping_frame fr
@@ -178,7 +186,7 @@ module Appmaker
         error_code = reader.read_int32
         puts("Got RST_STREAM with error code #{error_code}") unless error_code == 0x08 # 8 = CANCEL
         stream = @h2streams[fr.stream_identifier]
-        stream.on_close
+        stream.on_rst_stream unless stream == nil
       end
 
       def _handle_h2_goaway_frame fr
@@ -189,6 +197,8 @@ module Appmaker
         error_symbol = error_codes.find { |code, sym| code == error_code }
         error_message = fr.payload[(reader.cursor / 8)..-1].pack('C*')
         puts("Handled GOWAY error #{error_symbol} with message: \n#{error_message}")
+        puts("Dumping diagnosis info:")
+        dump_diagnosis_info
       end
 
       def _handle_h2_window_update_frame fr
@@ -197,18 +207,18 @@ module Appmaker
         print("Window size increment: #{increment} ")
         if fr.stream_identifier == 0
           puts("for the connection")
-          increase_window_size increment
+          change_window_size_by increment
         else
           stream = @h2streams[fr.stream_identifier]
           if stream
             puts("for stream #{fr.stream_identifier}")
-            stream.increase_window_size increment
+            stream.change_window_size_by increment
           end
         end
         turn_gears
       end
 
-      def _handle_h2_header_frame fr
+      def _handle_h2_headers_frame fr
         flag_end_stream = (fr.flags & 0x01) != 0
         flag_end_headers = (fr.flags & 0x04) != 0
         flag_padded = (fr.flags & 0x08) != 0
@@ -233,13 +243,13 @@ module Appmaker
           puts("\t#{name} => #{value}")
         end
 
-        stream = _fr_to_stream fr
+        stream = get_or_create_stream fr.stream_identifier
         stream.receive_headers headers, flags: {
-            end_stream: flag_end_stream,
-            end_headers: flag_end_headers,
-            padded: flag_padded,
-            priority: flag_priority
-          }
+          end_stream: flag_end_stream,
+          end_headers: flag_end_headers,
+          padded: flag_padded,
+          priority: flag_priority
+        }
       end
 
       def _h2_settingtype_to_sym id
@@ -256,7 +266,7 @@ module Appmaker
       def _handle_h2_settings_frame fr
         is_ack = ((fr.flags & 1) == 1)
         if is_ack
-          puts "ACKing the settings ;)"
+          puts "Client ACK-ed our SETTINGS frame"
           return
         end
 

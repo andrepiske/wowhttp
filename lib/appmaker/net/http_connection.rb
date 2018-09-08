@@ -9,12 +9,25 @@ module Appmaker
         super *args
       end
 
+      def dump_diagnosis_info
+        puts("HTTP/1.1 connection in state=#{@state}")
+        puts("Has gear? #{@gear == nil ? 'no' : 'yes'}")
+        puts("Handler class = #{@handler.class}")
+        if @_debug_request
+          puts("Request dump:")
+          @_debug_request.dump_diagnosis_info
+        else
+          puts("Request is nil")
+        end
+      end
+
       def go!
         start_header_reading
       end
 
       def finish
         if recycle
+          @gear = nil
           recycle_connection
         else
           close
@@ -27,6 +40,26 @@ module Appmaker
           @handler = nil
           @state = :closed
         end
+      end
+
+      def on_writeable
+        return if @gear == nil
+        @gear.notify_writeable(16 * 1024)
+      end
+
+      def has_write_intention?
+        super || @gear != nil
+      end
+
+      def geared_send &tap
+        sink = proc do |data, finished:|
+          if data
+            write data
+          end
+          finish if finished
+        end
+        @gear = Gear::ProcGear.new sink, &tap
+        _register_write_intention
       end
 
       def write_then_finish data
@@ -51,6 +84,10 @@ module Appmaker
         @lock.synchronize do
           @handler.closed
           @handler = nil
+
+          # FIXME: do we need these?
+          # _unregister_write_intention
+          # _register_read_intention
         end
       end
 
@@ -65,6 +102,7 @@ module Appmaker
 
       def _finished_reading_headers
         request = @request_builder.request
+        @_debug_request = request # for debugging only
         @handler = _create_request_handler self, request
         @recycle = request.idempotent?
         head = request.ordered_headers.map { |k, v| "\n\t\t#{k}: #{v}" }.join('')

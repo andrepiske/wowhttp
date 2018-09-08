@@ -20,6 +20,14 @@ module Appmaker
       %w(GET HEAD PUT DELETE OPTIONS TRACE).include? verb
     end
 
+    def dump_diagnosis_info
+      puts("  Request verb=#{verb}")
+      puts("  Path=#{path}")
+      headers_hash.each do |key, value|
+        puts("  Header '#{key}'='#{value}'")
+      end
+    end
+
     def valid?
       return false if !verb_allows_body? && has_body?
 

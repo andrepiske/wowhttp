@@ -66,6 +66,11 @@ module Appmaker
         _attempt_write
       end
 
+      # Overridable
+      def has_write_intention?
+        @writing_buffer.length > 0
+      end
+
       private
 
       # To be overridden
@@ -132,10 +137,13 @@ module Appmaker
           @lock.unlock if locked
         end
 
-        if (has_remaining_data || @writing_buffer.length > 0) && !@closed
-          _register_write_intention
-        elsif !has_remaining_data && !@closed
-          @monitor.remove_interest :w
+        write_intention = has_write_intention? || has_remaining_data
+        if !@closed
+          if write_intention
+            _register_write_intention
+          else
+            @monitor.remove_interest :w
+          end
         end
       end
 

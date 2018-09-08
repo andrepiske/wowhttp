@@ -2,6 +2,7 @@
 module Appmaker; end
 
 require 'cgi'
+require 'forwardable'
 
 require 'appmaker/request'
 require 'appmaker/net'
