@@ -17,8 +17,14 @@ module Appmaker::Net::H2
 
       # always produce 6.2.2.
       response.headers.each do |name, value|
+        header_name = name.downcase.to_s
+
+        # XXX: Section 8.1.2.2 forbids us from sending Connection headers
+        # so let's drop them silently.
+        next if header_name == 'connection'
+
         @writer.write_byte 0x10
-        @writer.write_string name.downcase.to_s
+        @writer.write_string header_name
         @writer.write_string value.to_s
       end
     end
