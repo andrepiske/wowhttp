@@ -2,6 +2,10 @@
 module Appmaker
   module Net
     class ConnectionFabricator
+      Error = Class.new(StandardError)
+      InvalidALPNProtocolError = Class.new(Error)
+      SSLError = Class.new(Error)
+
       def initialize server, handler_klass
         @handler_klass = handler_klass
         @server = server
@@ -27,8 +31,10 @@ module Appmaker
         when 'http/1.1'
           _fabricate_http_connection monitor, ssl_socket
         else
-          raise "Unknown ALPN protocol: #{proto}"
+          raise InvalidALPNProtocolError, "Unknown ALPN protocol: '#{proto}'. Rejecting connection."
         end
+      rescue OpenSSL::OpenSSLError => e
+        raise SSLError, "OpenSSLError: #{e.class} message=#{e.message}"
       end
 
       private

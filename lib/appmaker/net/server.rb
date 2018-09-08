@@ -80,11 +80,20 @@ module Appmaker
         connection = nil
         @lock.synchronize do
           monitor = @selector.register(client_socket, :r)
-          connection = fabricator.fabricate_connection monitor, @ssl_ctx
-          @clients[client_socket] = connection
+          begin
+            connection = fabricator.fabricate_connection monitor, @ssl_ctx
+          rescue ConnectionFabricator::Error
+            @selector.deregister(client_socket)
+            begin
+              monitor.close unless monitor.closed?
+            rescue IOError
+            end
+          else
+            @clients[client_socket] = connection
+          end
         end
 
-        connection.go!
+        connection.go! unless connection == nil
       end
     end
   end

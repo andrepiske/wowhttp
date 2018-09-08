@@ -54,8 +54,11 @@ module Appmaker
           data = @socket.read_nonblock 1024
         rescue EOFError, Errno::ECONNRESET
           close
+        rescue OpenSSL::OpenSSLError => e
+          puts("SSL Error (class=#{e.class}) with message='#{e.message}'")
+          close
         end
-        @read_callback[data]
+        @read_callback[data] unless @closed
       end
 
       def notify_writeable
