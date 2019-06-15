@@ -23,7 +23,11 @@ module Appmaker
 
         # FIXME: Use accept_nonblock instead
         ssl_socket.accept
-        proto = ssl_socket.alpn_protocol
+        if RUBY_ENGINE == 'jruby' || true
+          proto = 'http/1.1'
+        else
+          proto = ssl_socket.alpn_protocol
+        end
 
         case proto
         when 'h2'
@@ -33,8 +37,14 @@ module Appmaker
         else
           raise InvalidALPNProtocolError, "Unknown ALPN protocol: '#{proto}'. Rejecting connection."
         end
+      rescue Errno::ECONNRESET => e
+        raise Error, "ECONNRESET"
       rescue OpenSSL::OpenSSLError => e
         raise SSLError, "OpenSSLError: #{e.class} message=#{e.message}"
+      end
+
+      def upgrade_connection_to_h2 monitor, ssl_socket
+        _fabricate_http2_connection monitor, ssl_socket
       end
 
       private

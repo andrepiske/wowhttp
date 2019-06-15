@@ -7,6 +7,7 @@ module Appmaker
     attr_accessor :path
     # attr_accessor :ordered_headers, :headers_hash
     attr_accessor :headers
+    attr_accessor :protocol_version
 
     def_delegators :@headers, :ordered_headers, :headers_hash
 
@@ -20,12 +21,28 @@ module Appmaker
       %w(GET HEAD PUT DELETE OPTIONS TRACE).include? verb
     end
 
+    def safe?
+      %w(GET HEAD OPTIONS).include? verb
+    end
+
     def dump_diagnosis_info
-      puts("  Request verb=#{verb}")
-      puts("  Path=#{path}")
+      Debug.error("  Request verb=#{verb}")
+      Debug.error("  Path=#{path}")
       headers_hash.each do |key, value|
-        puts("  Header '#{key}'='#{value}'")
+        Debug.error("  Header '#{key}'='#{value}'")
       end
+    end
+
+    def path_info
+      separator = path.index '?'
+      return path if separator == nil
+      path[0...separator]
+    end
+
+    def query_string
+      separator = path.index '?'
+      return nil if separator == nil
+      path[separator+1..-1]
     end
 
     def valid?

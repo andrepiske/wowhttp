@@ -1,12 +1,22 @@
 # frozen_string_literal: true
+require 'marcel'
+
 module Appmaker
   module Handler
     class StaticFile < Base
-      def handle_request
-        file_path = File.expand_path File.join('public', @request.path[1..-1])
+      def initialize options, *args
+        super *args
+        @base_path = options[:base_path]
+      end
 
-        # puts("Want file #{file_path} (#{@request.verb} #{@request.path})")
-        # puts("Headers: #{@request.ordered_headers}")
+      def handle_request
+        file_path = File.expand_path File.join(@base_path, @request.path[1..-1])
+
+        if Debug.info?
+          Debug.info("Want file #{file_path} (#{@request.verb} #{@request.path})")
+          Debug.info("Headers: #{@request.ordered_headers}")
+        end
+
         return false unless File.file? file_path
 
         response = make_base_response
@@ -21,18 +31,20 @@ module Appmaker
           end
         end
 
-        # puts("Will serve file #{file_path}")
+        Debug.info("Will serve file #{file_path}")
         content = File.read(file_path).force_encoding('ASCII-8BIT')
 
         response.set_header 'Accept-Ranges', 'bytes'
 
-        types = {
-          '.html' => 'text/html',
-          '.mp4' => 'video/mp4',
-          '.jpg' => 'image/jpeg',
-          '.js' => 'text/javascript',
-        }
-        mime_type = types.fetch File.extname(file_path), 'application/octet-stream'
+        # types = {
+        #   '.html' => 'text/html',
+        #   '.mp4' => 'video/mp4',
+        #   '.jpg' => 'image/jpeg',
+        #   '.js' => 'text/javascript',
+        # }
+        # mime_type = types.fetch File.extname(file_path), 'application/octet-stream'
+        mime_type = Marcel::MimeType.for extension: File.extname(file_path)
+        response.set_header 'Content-Type', mime_type
 
         range = @request.headers_hash['range']
         # range = nil
@@ -72,14 +84,14 @@ module Appmaker
         # pc = content.bytes.map { |c| "1\r\n#{c.chr}\r\n" }.join('')
         # answer_content = "#{pc}0\r\n\r\n".encode('ASCII-8BIT')
 
-        # binding.pry
         @http_connection.send_header response
 
         cursor = 0
         @http_connection.geared_send do |limit, send_proc|
-          limit = [1024, limit].min
+          limit = [1024 * 32, limit].min
           s = cursor
           cursor += limit
+          # binding.pry if (cursor >= content.length)
           send_proc.call content[s...(s + limit)], finished: (cursor >= content.length)
         end
 

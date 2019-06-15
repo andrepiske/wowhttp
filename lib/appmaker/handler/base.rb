@@ -10,11 +10,19 @@ module Appmaker
       end
 
       def keepalive!
-        @http_connection.recycle = true
+        @http_connection.set_keepalive true
       end
 
       def do_not_keepalive!
-        @http_connection.recycle = false
+        @http_connection.set_keepalive false
+      end
+
+      def set_async!
+        @http_connection.set_async!
+      end
+
+      def on_receive_data_chunk data, is_final
+        # do nothing, you have to override this if you want to
       end
 
       def make_base_response

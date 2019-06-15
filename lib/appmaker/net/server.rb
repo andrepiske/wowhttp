@@ -11,38 +11,51 @@ module Appmaker
         @lock = Mutex.new
         @signaled = false
 
-        Signal.trap 'INT' do
-          dump_diagnosis_info
-          exit(1) if @signaled
-          @signaled = true
-        end
+        # Signal.trap 'INT' do
+        #   dump_diagnosis_info
+        #   exit(1) if @signaled
+        #   @signaled = true
+        # end
 
-        puts("Using #{@selector.backend} backend")
+        Debug.info("Using #{@selector.backend} backend")
       end
 
       def dump_diagnosis_info
-        puts('## DIAGNOSIS DUMP BEGIN')
-        puts("Has #{@clients.length} clients. Now printing client info:")
+        Debug.error('## DIAGNOSIS DUMP BEGIN')
+        Debug.error("Has #{@clients.length} clients. Now printing client info:")
         @clients.values.each_with_index do |cli, index|
-          puts('## DIAG FOR CLIENT #{index}:')
+          Debug.error('## DIAG FOR CLIENT #{index}:')
           cli.dump_diagnosis_info
         end
-        puts('## DIAGNOSIS DUMP END')
+        Debug.error('## DIAGNOSIS DUMP END')
       end
 
       def configure_ssl(cert, key, cert_store=nil)
-        @ssl_ctx = OpenSSL::SSL::SSLContext.new :TLSv1_2_server
+        is_jruby = (RUBY_ENGINE == 'jruby')
+        @ssl_ctx = OpenSSL::SSL::SSLContext.new
 
         @ssl_ctx.key = key
         @ssl_ctx.cert = cert
         @ssl_ctx.cert_store = cert_store if cert_store != nil
 
-        allowed_protocolos = ['h2', 'http/1.1']
-
-        @ssl_ctx.alpn_protocols = allowed_protocolos.dup
-        @ssl_ctx.alpn_select_cb = lambda do |protocols|
-          (allowed_protocolos & protocols).first
+        if !is_jruby && @ssl_ctx.respond_to?(:min_version=)
+          @ssl_ctx.min_version = OpenSSL::SSL::TLS1_2_VERSION
+        else
+          @ssl_ctx.ssl_version = :TLSv1_2
         end
+
+        # jruby-openssl does not support ALPN yet
+        if !is_jruby
+          allowed_protocols = ['h2', 'http/1.1']
+          # allowed_protocols = ['http/1.1']
+
+          @ssl_ctx.alpn_protocols = allowed_protocols.dup
+          @ssl_ctx.alpn_select_cb = lambda do |protocols|
+            (allowed_protocols & protocols).first || allowed_protocols[-1]
+          end
+        end
+
+        @ssl_ctx
       end
 
       def start_listening handler_klass
@@ -88,6 +101,27 @@ module Appmaker
             io.close unless io.closed?
           rescue IOError
           end
+        end
+      end
+
+      # def switch_connection io, new_connection
+      #   @lock.synchronize do
+      #     @clients[io] = new_connection
+      #   end
+      # end
+
+      def upgrade_connection_to_h2 connection
+        # TODO check if SSL is enabled. Can't use H2 over non-TLS connections
+        fabricator = ConnectionFabricator.new self, @handler_klass
+
+        @lock.synchronize do
+          ssl_socket = connection.socket
+          monitor = connection.monitor
+          h2_connection = fabricator.upgrade_connection_to_h2 monitor, ssl_socket
+
+          @clients[monitor.io] = h2_connection
+          # @server.switch_connection io, h2_connection
+          h2_connection.go_from_h11_upgrade
         end
       end
 

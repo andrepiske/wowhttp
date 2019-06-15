@@ -49,7 +49,9 @@ module Appmaker
       attr_reader :state
       attr_accessor :connection # the Http2Connection behind this
       attr_accessor :window_size # flow-control window size
+      attr_accessor :recv_window_size # flow-control window size for receiving data
       attr_reader :gear
+      attr_reader :is_async
 
       def initialize(sid, connection, request_handler_fabricator)
         @state = :idle
@@ -57,17 +59,26 @@ module Appmaker
         @connection = connection
         @request_handler_fabricator = request_handler_fabricator
         @window_size = 65535
+        @recv_window_size = 65535
+      end
+
+      def set_keepalive *args
+        # no-op for HTTP/2
+      end
+
+      def set_async!
+        @is_async = true
       end
 
       def dump_diagnosis_info
-        puts(" H2 stream sid=#{@sid} in state=#{@state}")
-        puts(" Window size=#{@window_size}")
-        puts(" Handler class = #{@handler.class}")
+        Debug.error(" H2 stream sid=#{@sid} in state=#{@state}")
+        Debug.error(" Window size=#{@window_size}")
+        Debug.error(" Handler class = #{@handler.class}")
         if @_debug_request
-          puts(" Request dump:")
+          Debug.error(" Request dump:")
           @_debug_request.dump_diagnosis_info
         else
-          puts(" Request is nil")
+          Debug.error(" Request is nil")
         end
       end
 
@@ -81,12 +92,24 @@ module Appmaker
 
         if flags[:end_stream]
           set_state_to :half_closed_remote
-          _process_request
+          _process_request unless @handler != nil
         end
       end
 
+      def receive_data data, end_stream
+        raise 'Invalid state' unless @state == :open
+
+        if end_stream
+          set_state_to :half_closed_remote
+        end
+        if @handler == nil
+          _process_request
+        end
+        @handler.on_receive_data_chunk data, end_stream
+      end
+
       def set_state_to new_state
-        puts("Stream #{sid} went from #{state} to #{new_state}")
+        Debug.info("Stream #{sid} went from #{state} to #{new_state}") if Debug.info?
         @state = new_state
       end
 
@@ -121,7 +144,7 @@ module Appmaker
 
       # Whether we are intending to send more data
       def intents_to_write?
-        @gear != nil && !@finished && !blocked_from_sending?
+        (@gear != nil || @is_async) && !@finished && !blocked_from_sending?
       end
 
       # We can write again, so let's make the gear turn!
@@ -137,7 +160,7 @@ module Appmaker
           if data != nil
             @window_size -= data.length
             connection.change_window_size_by(-data.length)
-            # puts("Sending geared #{data.length} bytes")
+
             send_data_frame data, end_stream: finished do
               mark_finished if finished
             end
@@ -224,6 +247,7 @@ module Appmaker
 
       def _process_request
         request = Request.new
+
         @_debug_request = request
         @headers.each do |name, value|
           if name[0] == ':'
@@ -233,7 +257,7 @@ module Appmaker
             request.headers.add_header name, value
           end
         end
-        puts("Handling H2 request now")
+        Debug.info("Handling H2 request now")
         @handler = _create_request_handler self, request
         @handler.handle_request
         # run the request and answer the client

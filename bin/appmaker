@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
-$:.unshift File.expand_path("../lib", __dir__)
+$:.unshift File.expand_path("#{__FILE__}/../../lib")
 
 require 'appmaker/cli'
 Appmaker::CLI.bootstrap

@@ -1,23 +1,32 @@
 GEM
   remote: https://rubygems.org/
   specs:
-    byebug (9.1.0)
+    byebug (10.0.2)
     coderay (1.1.2)
     connection_pool (2.2.1)
     erubi (1.7.0)
+    ffi (1.9.25-java)
     method_source (0.9.0)
     mustermann (1.0.1)
     nio4r (2.2.0)
-    pg (1.0.0)
-    pry (0.11.1)
+    nio4r (2.2.0-java)
+    pry (0.11.3)
       coderay (~> 1.1.0)
       method_source (~> 0.9.0)
-    pry-byebug (3.5.0)
-      byebug (~> 9.1)
+    pry (0.11.3-java)
+      coderay (~> 1.1.0)
+      method_source (~> 0.9.0)
+      spoon (~> 0.0)
+    pry-byebug (3.6.0)
+      byebug (~> 10.0)
       pry (~> 0.10)
     redis (4.0.1)
+    spoon (0.0.6)
+      ffi
+    stackprof (0.2.12)
 
 PLATFORMS
+  java
   ruby
 
 DEPENDENCIES
@@ -25,10 +34,10 @@ DEPENDENCIES
   erubi (~> 1.7.0)
   mustermann
   nio4r (~> 2.2.0)
-  pg
   pry
   pry-byebug
   redis
+  stackprof
 
 BUNDLED WITH
-   1.16.1
+   1.17.1

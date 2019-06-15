@@ -4,6 +4,7 @@ module Appmaker
     class Http2Connection < Connection
       attr_accessor :settings
       attr_accessor :window_size # flow-control window size
+      attr_accessor :recv_window_size # flow-control window size for receiving data
 
       def initialize *args
         @request_handler_fabricator = args.pop
@@ -18,14 +19,16 @@ module Appmaker
         @hpack_local_context = H2::HpackContext.new 4096
         @hpack_remote_context = H2::HpackContext.new 4096
         @h2streams = {}
+        @recv_window_size = 65536 # Initial windows size according to RFC
+        @window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
         super *args
       end
 
       def dump_diagnosis_info
-        puts("HTTP/2 connection in state=#{@state}")
-        puts("Settings = #{@settings}")
-        puts("Has #{@h2streams.length} streams")
-        puts("Now dumping streams:")
+        Debug.error("HTTP/2 connection in state=#{@state}")
+        Debug.error("Settings = #{@settings}")
+        Debug.error("Has #{@h2streams.length} streams")
+        Debug.error("Now dumping streams:")
         @h2streams.values.each do |s|
           s.dump_diagnosis_info
         end
@@ -35,14 +38,19 @@ module Appmaker
         _register_write_intention unless @closed
       end
 
-      def go!
+      def go_from_h11_upgrade
+        Debug.info('Going from HTTP/1.1 to H2')
+        go! preface_sent: true
+      end
+
+      def go! preface_sent: false
         # We must send a SETTINGS frame before anything else, as per RFC:
         #   The server connection preface consists of a potentially empty
         #   SETTINGS frame (Section 6.5) that MUST be the first frame the server
         #   sends in the HTTP/2 connection.
         _send_initial_settings
 
-        @frame_reader = Appmaker::Net::Http2StreamingBuffer.new do |hframe|
+        @frame_reader = Appmaker::Net::Http2StreamingBuffer.new(preface_sent) do |hframe|
           _handle_h2_frame hframe
         end
 
@@ -96,7 +104,7 @@ module Appmaker
         frame_data = writer.bytes_array
 
         if frame.type == :HEADERS && frame_data.length >= 16384 # 16KiB
-          puts("WARNING: Sending header frame over 16KiB (#{frame_data.length}B)")
+          Debug.warn("WARNING: Sending header frame over 16KiB (#{frame_data.length}B)")
         end
 
         write frame_data, &block
@@ -137,7 +145,7 @@ module Appmaker
       private
 
       def on_close
-        puts("CONNECTION H2 CLOSED")
+        Debug.info("CONNECTION H2 CLOSED")
         streams = @h2streams.map { |sid, stream| stream }
         streams.each(&:on_rst_stream)
       end
@@ -165,16 +173,16 @@ module Appmaker
       def _send_initial_settings
         frame = make_frame :SETTINGS, nil
         send_frame frame do
-          puts "First SETTINGS sent"
+          Debug.info("First SETTINGS sent")
         end
       end
 
       def _handle_h2_frame fr
-        puts("Received frame #{fr.type}")
+        Debug.info("Received frame #{fr.type}")
 
-        unavailable_type = [:DATA, :PUSH_PROMISE, :CONTINUATION]
+        unavailable_type = [:PUSH_PROMISE, :CONTINUATION]
         if unavailable_type.include?(fr.type)
-          puts("ERROR: Don't know how to process frame")
+          Debug.error("ERROR: Don't know how to process frame")
           binding.pry
         end
 
@@ -191,13 +199,13 @@ module Appmaker
         reader = H2::BitReader.new fr.payload
         ack_frame = H2::Frame.new(:PING, 1, 8, 0, fr.payload)
         send_frame ack_frame
-        puts("responding to ping request")
+        Debug.info("responding to ping request")
       end
 
       def _handle_h2_rst_stream_frame fr
         reader = H2::BitReader.new fr.payload
         error_code = reader.read_int32
-        puts("Got RST_STREAM with error code #{error_code}") unless error_code == 0x08 # 8 = CANCEL
+        Debug.warn("Got RST_STREAM with error code #{error_code}") unless error_code == 0x08 # 8 = CANCEL
         stream = @h2streams[fr.stream_identifier]
         stream.on_rst_stream unless stream == nil
       end
@@ -209,26 +217,69 @@ module Appmaker
 
         error_symbol = error_codes.find { |code, sym| code == error_code }
         error_message = fr.payload[(reader.cursor / 8)..-1].pack('C*')
-        puts("Handled GOWAY error #{error_symbol} with message: \n#{error_message}")
-        puts("Dumping diagnosis info:")
+        Debug.error("Handled GOWAY error #{error_symbol} with message: \n#{error_message}")
+        Debug.error("Dumping diagnosis info:")
         dump_diagnosis_info
       end
 
       def _handle_h2_window_update_frame fr
         reader = H2::BitReader.new(fr.payload)
         increment = (reader.read_int32 & 0x7FFFFFFF)
-        print("Window size increment: #{increment} ")
+
         if fr.stream_identifier == 0
-          puts("for the connection")
+          Debug.info("Window size increment: #{increment} for the connection")
           change_window_size_by increment
         else
           stream = @h2streams[fr.stream_identifier]
           if stream
-            puts("for stream #{fr.stream_identifier}")
+            Debug.info("Window size increment: #{increment} for stream #{fr.stream_identifier}")
             stream.change_window_size_by increment
           end
         end
         turn_gears
+      end
+
+      def _handle_h2_data_frame fr
+        reader = H2::BitReader.new fr.payload
+        stream = @h2streams[fr.stream_identifier]
+        end_stream = (fr.flags & 0x01) == 0x01
+
+        @recv_window_size -= fr.payload_length
+        Debug.info("Global recv window size = #{@recv_window_size}")
+        if @recv_window_size < 128000
+          increment = 524288 - @recv_window_size
+          @recv_window_size += increment
+
+          if increment > 0
+            Debug.info("Sending increment of #{increment / 1024}kb, WS=#{@recv_window_size}")
+            bw = H2::BitWriter.new
+            bw.write_int32 increment
+            send_frame H2::Frame.new(:WINDOW_UPDATE, 0, 4, 0, bw.bytes)
+          end
+        end
+
+        if stream != nil
+          stream.recv_window_size -= fr.payload_length
+          Debug.info("Stream #{fr.stream_identifier} recv window size = #{stream.recv_window_size}") if Debug.info?
+          if stream.recv_window_size < 128000
+            increment = 524288 - stream.recv_window_size
+            stream.recv_window_size += increment
+
+            if increment > 0
+              Debug.info("Sending increment of #{increment / 1024}kb, WS=#{@recv_window_size} stream=#{fr.stream_identifier}") if Debug.info?
+              bw = H2::BitWriter.new
+              bw.write_int32 increment
+              send_frame H2::Frame.new(:WINDOW_UPDATE, 0, 4, fr.stream_identifier, bw.bytes)
+            end
+          end
+        end
+
+        if stream == nil # TODO: should do a better check here
+          Debug.warn "Discarding DATA frame as stream #{fr.stream_identifier} is no more"
+          return
+        end
+
+        stream.receive_data fr.payload.pack('C*'), end_stream
       end
 
       def _handle_h2_headers_frame fr
@@ -251,9 +302,11 @@ module Appmaker
           'priority' => flag_priority
         }.select { |k, v| v }.map { |k, v| k }.join(',')
 
-        puts("Reader headers with flags=#{str_flags}:")
-        headers.each do |name, value|
-          puts("\t#{name} => #{value}")
+        if Debug.info?
+          Debug.info("Reader headers with flags=#{str_flags}:")
+          headers.each do |name, value|
+            Debug.info("\t#{name} => #{value}")
+          end
         end
 
         stream = get_or_create_stream fr.stream_identifier
@@ -279,22 +332,22 @@ module Appmaker
       def _handle_h2_settings_frame fr
         is_ack = ((fr.flags & 1) == 1)
         if is_ack
-          puts "Client ACK-ed our SETTINGS frame"
+          Debug.info "Client ACK-ed our SETTINGS frame"
           return
         end
 
         num_params = fr.payload_length / 6
         (0...num_params).each do |idx|
           offset = idx * 6
-          id = fr.payload[offset...offset+2].pack('C*').unpack1('S>')
-          value = fr.payload[offset+2...offset+6].pack('C*').unpack1('I>')
+          id = fr.payload[offset...offset+2].pack('C*').unpack('S>')[0]
+          value = fr.payload[offset+2...offset+6].pack('C*').unpack('I>')[0]
           settings[_h2_settingtype_to_sym(id)] = value
         end
-        puts("Got some settings for stream #{fr.stream_identifier}, sending ACK")
+        Debug.info("Got some settings for stream #{fr.stream_identifier}, sending ACK") if Debug.info?
 
         if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != @window_size
           @window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
-          puts("Initial window size changed to = #{@window_size}")
+          Debug.info("Initial window size changed to = #{@window_size}")
         end
 
         ack_frame = H2::Frame.new(:SETTINGS, 1, 0, 0, '')

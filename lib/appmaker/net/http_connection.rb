@@ -10,14 +10,14 @@ module Appmaker
       end
 
       def dump_diagnosis_info
-        puts("HTTP/1.1 connection in state=#{@state}")
-        puts("Has gear? #{@gear == nil ? 'no' : 'yes'}")
-        puts("Handler class = #{@handler.class}")
+        Debug.error("HTTP/1.1 connection in state=#{@state}")
+        Debug.error("Has gear? #{@gear == nil ? 'no' : 'yes'}")
+        Debug.error("Handler class = #{@handler.class}")
         if @_debug_request
-          puts("Request dump:")
+          Debug.error("Request dump:")
           @_debug_request.dump_diagnosis_info
         else
-          puts("Request is nil")
+          Debug.error("Request is nil")
         end
       end
 
@@ -32,6 +32,14 @@ module Appmaker
         else
           close
         end
+      end
+
+      def set_keepalive value
+        @recycle = value
+      end
+
+      def set_async!
+        # no-op
       end
 
       def on_close
@@ -101,12 +109,20 @@ module Appmaker
       end
 
       def _finished_reading_headers
+        if @request_builder.errored?
+          raise "RequestBuilder errored! Reason = #{@request_builder.error_reason}"
+        end
+
+        if @request_builder.upgrade_to_h2?
+          binding.pry
+        end
+
         request = @request_builder.request
         @_debug_request = request # for debugging only
         @handler = _create_request_handler self, request
-        @recycle = request.idempotent?
+        @recycle = request.safe? # FIXME: should we use idempotent or safe here?
         head = request.ordered_headers.map { |k, v| "\n\t\t#{k}: #{v}" }.join('')
-        puts("\nHandle a #{request.verb} #{request.path} with:#{head}")
+        Debug.info("\nHandle a #{request.verb} #{request.path} with:#{head}") if Debug.info?
         @handler.handle_request
       end
 
@@ -128,13 +144,38 @@ module Appmaker
         _onread_initial data
       end
 
-      # def _check_http2 data
-      #   return false if @http_version != :http2
-      #   # might have broken frames
-      #   return false unless data.length >= 24 && data[0...24].bytes == expected_preface
-      #   puts('Using http2!')
-      #   binding.pry
-      # end
+      def _process_read_line line
+        if line == '' && @request_builder.upgrade_to_h2?
+          @request_builder.feed_line line
+          if @request_builder.finished_upgrading_to_h2?
+            @server.upgrade_connection_to_h2 self
+          end
+        elsif line == ''
+          _finished_reading_headers
+          @line_reader.finish
+          remaining_buffer = @line_reader.buffer.join
+          @line_reader = nil
+          return if @closed
+
+          # Handler finished processing, we now might either recycle or close the connection
+          if @handler == nil
+            if @request_builder.request.has_body?
+              # Someone wants to ignore the content and just finish the request
+              # We won't handle this case as it is kinda non-sense. Let's just close the connection instead
+              close
+            else
+              @state = :recycling
+            end
+          else
+            if @request_builder.request.has_body?
+              @state = :read_body
+              _on_read_data remaining_buffer if remaining_buffer.length > 0
+            end
+          end
+        else
+          @request_builder.feed_line line
+        end
+      end
 
       def _onread_initial data
         return if data == nil
@@ -142,32 +183,7 @@ module Appmaker
         if @line_reader == nil
           @request_builder = RequestBuilder.new
           @line_reader = Appmaker::Net::LineStreamingBuffer.new do |line|
-            line = (line.chars - ["\r"]).join
-            if line == ''
-              _finished_reading_headers
-              @line_reader.finish
-              remaining_buffer = @line_reader.buffer.join
-              @line_reader = nil
-              next if @closed
-
-              # Handler finished processing, we now might either recycle or close the connection
-              if @handler == nil
-                if @request_builder.request.has_body?
-                  # Someone wants to ignore the content and just finish the request
-                  # We won't handle this case as it is kinda non-sense. Let's just close the connection instead
-                  close
-                else
-                  @state = :recycling
-                end
-              else
-                if @request_builder.request.has_body?
-                  @state = :read_body
-                  _on_read_data remaining_buffer if remaining_buffer.length > 0
-                end
-              end
-            else
-              @request_builder.feed_line line
-            end
+            _process_read_line((line.chars - ["\r"]).join)
           end
         end
         @line_reader.feed data

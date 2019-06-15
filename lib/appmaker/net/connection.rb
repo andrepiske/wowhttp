@@ -15,7 +15,7 @@ module Appmaker
         end
       end
 
-      attr_reader :socket, :server
+      attr_reader :socket, :monitor, :server
 
       def initialize server, monitor, socket
         @closed = false
@@ -49,16 +49,25 @@ module Appmaker
       end
 
       def notify_readable
-        return unless @read_callback && !@closed
-        begin
-          data = @socket.read_nonblock 1024
-        rescue EOFError, Errno::ECONNRESET
-          close
-        rescue OpenSSL::OpenSSLError => e
-          puts("SSL Error (class=#{e.class}) with message='#{e.message}'")
-          close
+        more_to_read = false
+        loop do
+          return unless @read_callback && !@closed
+          begin
+            how_much = 1024
+            data = @socket.read_nonblock how_much
+            more_to_read = true if data.length == how_much
+          rescue OpenSSL::SSL::SSLErrorWaitReadable
+            return
+          rescue EOFError, Errno::ECONNRESET
+            close
+          rescue OpenSSL::OpenSSLError => e
+            Debug.error("SSL Error (class=#{e.class}) with message='#{e.message}'")
+            close
+          end
+          @read_callback[data] unless @closed
+
+          break unless more_to_read
         end
-        @read_callback[data] unless @closed
       end
 
       def notify_writeable
@@ -126,11 +135,11 @@ module Appmaker
           end
         rescue IO::WaitWritable
         rescue Errno::EPIPE
-          puts("BROKEN PIPE!")
+          Debug.error("BROKEN PIPE!")
           locked ? _close_without_locking : close
           return
         rescue Errno::EPROTOTYPE
-          puts("EPROTOTYPE error")
+          Debug.error("EPROTOTYPE error")
           locked ? _close_without_locking : close
           return
         ensure

@@ -12,7 +12,7 @@ module Appmaker
 
     def closed
       @http_connection = nil
-      puts("Connection closed")
+      Debug.info("Connection closed")
     end
 
     def self.new_handler *args

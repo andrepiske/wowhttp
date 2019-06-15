@@ -21,7 +21,7 @@ module Appmaker::Net::H2
 
         # XXX: Section 8.1.2.2 forbids us from sending Connection headers
         # so let's drop them silently.
-        next if header_name == 'connection'
+        next if %w(connection transfer-encoding keep-alive).include?(header_name)
 
         @writer.write_byte 0x10
         @writer.write_string header_name
