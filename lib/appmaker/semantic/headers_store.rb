@@ -39,6 +39,18 @@ module Appmaker
       end
 
       def set_header key, value
+        key_lower = key.downcase
+        if @kind == :response && key_lower == 'set-cookie'
+          add_header key, value
+        else
+          @headers_hash[key_lower] = value
+          oh_index = @ordered_headers.find_index { |k, v| k.downcase == key_lower }
+          if oh_index
+            @ordered_headers[oh_index][1] = value
+          else
+            @ordered_headers << [key, value]
+          end
+        end
       end
     end
   end
