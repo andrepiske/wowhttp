@@ -16,7 +16,7 @@ module Appmaker::Net::H2
       @writer.write_string response.code.to_s
 
       # always produce 6.2.2.
-      response.headers.each do |name, value|
+      response.headers.ordered_headers.each do |name, value|
         header_name = name.downcase.to_s
 
         # XXX: Section 8.1.2.2 forbids us from sending Connection headers

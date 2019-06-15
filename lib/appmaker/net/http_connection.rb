@@ -79,7 +79,7 @@ module Appmaker
       def send_header response, &block
         phrase = Response::CODE_TO_REASON_PHRASE_MAPPING.fetch response.code, 'Whatever'
         firstline = "HTTP/1.1 #{response.code} #{phrase}"
-        headers = response.headers.map do |k, v|
+        headers = response.headers.ordered_headers.map do |k, v|
           "#{k}: #{v}"
         end.join("\r\n")
 
@@ -118,10 +118,12 @@ module Appmaker
         end
 
         request = @request_builder.request
+        request.protocol = 'http/1.1'
         @_debug_request = request # for debugging only
         @handler = _create_request_handler self, request
         @recycle = request.safe? # FIXME: should we use idempotent or safe here?
         head = request.ordered_headers.map { |k, v| "\n\t\t#{k}: #{v}" }.join('')
+
         Debug.info("\nHandle a #{request.verb} #{request.path} with:#{head}") if Debug.info?
         @handler.handle_request
       end

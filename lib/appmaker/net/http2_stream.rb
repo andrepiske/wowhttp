@@ -247,12 +247,19 @@ module Appmaker
 
       def _process_request
         request = Request.new
+        request.protocol = 'http/2'
 
         @_debug_request = request
         @headers.each do |name, value|
           if name[0] == ':'
-            request.path = value if name == ':path'
-            request.verb = value if name == ':method'
+            case name
+            when ':path'
+              request.path = value
+            when ':method'
+              request.verb = value
+            when ':authority'
+              request.headers.add_header('Host', value)
+            end
           else
             request.headers.add_header name, value
           end

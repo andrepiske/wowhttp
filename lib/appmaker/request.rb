@@ -7,7 +7,7 @@ module Appmaker
     attr_accessor :path
     # attr_accessor :ordered_headers, :headers_hash
     attr_accessor :headers
-    attr_accessor :protocol_version
+    attr_accessor :protocol, :remote_address
 
     def_delegators :@headers, :ordered_headers, :headers_hash
 
@@ -23,6 +23,25 @@ module Appmaker
 
     def safe?
       %w(GET HEAD OPTIONS).include? verb
+    end
+
+    def host_with_port
+      result = headers_hash['host']&.split(':')
+      return nil if result == nil
+      result << 443 if result.length < 2
+      result
+    end
+
+    def host
+      h = host_with_port
+      return nil if h == nil
+      h[0]
+    end
+
+    def port
+      h = host_with_port
+      return nil if h == nil
+      h[1]
     end
 
     def dump_diagnosis_info

@@ -6,20 +6,23 @@ module Appmaker
   module Handler
     class RackAdapter < Base
       def self.request_to_env(request)
+        protocol_version = request.protocol.upcase
+        host, port = request.host_with_port
+
         env = {
           'GATEWAY_INTERFACE' => 'CGI/1.2',
-          'SERVER_PROTOCOL' => 'HTTP/2',
+          'SERVER_PROTOCOL' => protocol_version,
           'REQUEST_METHOD' => request.verb.to_s,
           'REQUEST_PATH' => request.path_info,
           'REQUEST_URI' => request.path,
           'PATH_INFO' => request.path_info,
 
            # FIXME: get real remote address
-          'REMOTE_ADDR' => '127.0.0.1',
+          'REMOTE_ADDR' => request.remote_address,
 
            # FIXME: get real server name
-          'SERVER_NAME' => 'www.hadronltd.com',
-          'SERVER_PORT' => '3999',
+          'SERVER_NAME' => host,
+          'SERVER_PORT' => port,
 
           'rack.input' => StringIO.new,
         }
@@ -31,7 +34,7 @@ module Appmaker
         end
 
         # binding.pry
-        env['HTTP_VERSION'] = 'HTTP/2'
+        env['HTTP_VERSION'] = protocol_version
 
         env
       end

@@ -4,7 +4,7 @@ require 'date'
 module Appmaker
   class Response
     attr_accessor :code
-    attr_accessor :headers
+    attr_reader :headers
 
     CODE_TO_REASON_PHRASE_MAPPING = {
       100 => 'Continue',
@@ -53,11 +53,11 @@ module Appmaker
 
     def initialize
       @code = 200
-      @headers = {}
+      @headers = Semantic::HeadersStore.new :response
     end
 
     def set_header key, value
-      @headers[key] = value
+      @headers.set_header key, value
     end
   end
 end
