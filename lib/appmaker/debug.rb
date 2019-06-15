@@ -2,14 +2,26 @@
 module Appmaker
   module Debug
     class << self
-      def enabled?
-        false
-        # true
+      def debug_level
+        case ENV['APPMAKER_DEBUG']&.downcase
+        when 'debug', 'info', 'true'
+          3
+        when 'warn'
+          2
+        when 'error'
+          1
+        else
+          0
+        end
       end
 
-      def info?; enabled?; end
-      def warn?; enabled?; end
-      def errork?; enabled?; end
+      def enabled?
+        debug_level >= 3
+      end
+
+      def info?; debug_level >= 3; end
+      def warn?; debug_level >= 2; end
+      def error?; debug_level >= 1; end
 
       def info(*args)
         return unless info?
