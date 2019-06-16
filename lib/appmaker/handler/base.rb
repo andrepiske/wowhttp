@@ -30,8 +30,8 @@ module Appmaker
 
         resp.set_header 'Server', 'lolmao'
         resp.set_header 'Date', DateTime.now.rfc2822
-        resp.set_header 'Accept-CH', 'device-memory, dpr, width, viewport-width, rtt, downlink, ect'
-        resp.set_header 'Accept-CH-Lifetime', '300'
+        # resp.set_header 'Accept-CH', 'device-memory, dpr, width, viewport-width, rtt, downlink, ect'
+        # resp.set_header 'Accept-CH-Lifetime', '300'
 
         if @http_connection.recycle
           resp.set_header 'Connection', 'keep-alive'
