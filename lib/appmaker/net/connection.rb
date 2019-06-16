@@ -60,6 +60,12 @@ module Appmaker
             return
           rescue EOFError, Errno::ECONNRESET
             close
+          rescue IOError => e
+            if RUBY_PLATFORM == 'java'
+              if e.message == 'Connection reset by peer'
+                close
+              end
+            end
           rescue OpenSSL::OpenSSLError => e
             Debug.error("SSL Error (class=#{e.class}) with message='#{e.message}'")
             close
@@ -126,11 +132,17 @@ module Appmaker
             has_remaining_data = false
             chunk.notify_finished
           end
-        rescue IOError
-          if @socket.closed?
+        rescue IOError => e
+          with_coffee = (RUBY_PLATFORM == 'java')
+          if @socket.closed? || (with_coffee && e.message == 'Broken pipe')
+            locked ? _close_without_locking : close
+            return
+          elsif with_coffee && e.message == 'Protocol wrong type for socket'
+            Debug.error("EPROTOTYPE error")
             locked ? _close_without_locking : close
             return
           else
+            puts "IOError raised, but socket is not closed!"
             raise
           end
         rescue IO::WaitWritable
@@ -157,7 +169,15 @@ module Appmaker
       end
 
       def _register_closed
-        @monitor.close true
+        begin
+          @socket.close
+        rescue IOError
+        end
+
+        begin
+          @monitor.close true
+        rescue IOError
+        end
         @server.register_closed self
       end
 

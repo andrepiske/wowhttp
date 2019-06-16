@@ -65,6 +65,14 @@ module Appmaker
       end
 
       def run_forever
+        # t = Thread.new do
+        #   loop do
+        #     puts("Clients = #{@clients.length}")
+        #     sleep(2)
+        #   end
+        # end
+        # t.run
+
         loop do
           iterate
           # break if @signaled
@@ -74,30 +82,34 @@ module Appmaker
       def iterate
         new_clients = []
         readables = []
-        writeables = []
+        writables = []
 
         clients = @clients.dup
         @selector.select do |monitor|
           if TCPServer === monitor.io
             new_clients << monitor.io if monitor.readable?
-          elsif TCPSocket === monitor.io && monitor.readable?
-            readables << clients[monitor.io]
-          elsif TCPSocket === monitor.io && monitor.writable?
-            writeables << clients[monitor.io]
+          elsif TCPSocket === monitor.io
+            readables << clients[monitor.io] if monitor.readable?
+            writables << clients[monitor.io] if monitor.writable?
           end
         end
         binding.pry if @signaled
 
-        writeables.each &:notify_writeable
+        Debug.info("writables = #{writables.length}")
+        Debug.info("readables = #{readables.length}")
+        Debug.info("new_clients = #{new_clients.length}")
+
+        writables.each &:notify_writeable
         readables.each &:notify_readable
         new_clients.each { |io| accept_client_connection(io) }
       end
 
       def register_closed connection
         @lock.synchronize do
-          io = connection.socket
+          io = connection.monitor.io
           @clients.delete io
           begin
+            Debug.info("Closing socket #{io} with closed=#{io.closed?}")
             io.close unless io.closed?
           rescue IOError
           end

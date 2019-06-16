@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
   s.add_runtime_dependency 'marcel'
   s.add_runtime_dependency 'nio4r', '~> 2.3.1'
 
-  if RUBY_ENGINE == 'jruby'
-    # s.add_runtime_dependency 'jruby-openssl', '0.10.2'
+  if RUBY_PLATFORM =~ /java/
+    s.add_dependency 'jruby-openssl', '~> 0.10.2'
   end
 end

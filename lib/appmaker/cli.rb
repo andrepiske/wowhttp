@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 if ENV['debug'] == 'true'
   require 'pry'
-  require 'pry-byebug'
+  require 'pry-byebug' unless RUBY_PLATFORM =~ /java/
 end
 
 require 'appmaker'
