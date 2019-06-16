@@ -3,6 +3,12 @@ module Appmaker
   module Debug
     class << self
       def debug_level
+        return 0 if @no_debug
+        if ENV['APPMAKER_DEBUG'] == nil
+          @no_debug = true
+          return 0
+        end
+
         case ENV['APPMAKER_DEBUG']&.downcase
         when 'debug', 'info', 'true'
           3
