@@ -53,7 +53,7 @@ module Appmaker
         loop do
           return unless @read_callback && !@closed
           begin
-            how_much = 1024
+            how_much = 1024 * 16
             data = @socket.read_nonblock how_much
             more_to_read = true if data.length == how_much
           rescue OpenSSL::SSL::SSLErrorWaitReadable
