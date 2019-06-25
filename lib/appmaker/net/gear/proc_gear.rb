@@ -23,6 +23,8 @@ module Appmaker::Net
         @tap.call limit, send_proc
       end
 
+      # TODO: implement #cancel or #cancelled method (or #notify_cancelled?)
+
       private
 
       def _flush_data data, **kw
