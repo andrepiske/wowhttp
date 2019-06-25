@@ -12,14 +12,14 @@ module Appmaker
           SETTINGS_HEADER_TABLE_SIZE: 4096,
           SETTINGS_ENABLE_PUSH: 1,
           SETTINGS_MAX_CONCURRENT_STREAMS: 100,
-          SETTINGS_INITIAL_WINDOW_SIZE: 65536,
+          SETTINGS_INITIAL_WINDOW_SIZE: 65535,
           SETTINGS_MAX_FRAME_SIZE: 16384,
           SETTINGS_MAX_HEADER_LIST_SIZE: 2**16
         }
         @hpack_local_context = H2::HpackContext.new 4096
         @hpack_remote_context = H2::HpackContext.new 4096
         @h2streams = {}
-        @recv_window_size = 65536 # Initial windows size according to RFC
+        @recv_window_size = 65535 # Initial windows size according to RFC
         @window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
         super *args
       end
