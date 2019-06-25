@@ -91,7 +91,6 @@ module Appmaker
           limit = [1024 * 32, limit].min
           s = cursor
           cursor += limit
-          # binding.pry if (cursor >= content.length)
           send_proc.call content[s...(s + limit)], finished: (cursor >= content.length)
         end
 

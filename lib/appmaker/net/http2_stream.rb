@@ -213,10 +213,6 @@ module Appmaker
 
       def send_header response, end_stream: false, &block
         writer = H2::BitWriter.new
-        # writer.write_byte 0 # pad length
-        # writer.write_int32 0
-        # writer.write_byte 0
-
         header_encoder = H2::HpackEncoder.new writer, @hpack_local_context
         header_encoder.dump response
 
