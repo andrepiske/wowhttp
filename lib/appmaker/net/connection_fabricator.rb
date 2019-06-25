@@ -26,7 +26,7 @@ module Appmaker
         if RUBY_ENGINE == 'jruby'
           proto = 'http/1.1'
         else
-          proto = ssl_socket.alpn_protocol
+          proto = ssl_socket.alpn_protocol || 'http/1.1'
         end
 
         case proto
