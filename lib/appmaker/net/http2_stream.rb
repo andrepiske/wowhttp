@@ -181,10 +181,10 @@ module Appmaker
       def write_then_finish content, &block
         cursor = 0
         geared_send do |max_bytes, send|
-          chunk = content[max_bytes...(cursor + max_bytes)]
+          chunk = content[cursor...(cursor + max_bytes)]
           is_last = ((cursor + max_bytes) > content.length)
           cursor += chunk.length
-          send.call(chunk, is_last)
+          send.call(chunk, finished: is_last)
         end
       end
 
