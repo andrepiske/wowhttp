@@ -181,19 +181,12 @@ module Appmaker
 
       # TODO: replace by BufferedGear
       def write_then_finish content, &block
-        max_bytes = connection.settings[:SETTINGS_MAX_FRAME_SIZE]
         cursor = 0
-
-        loop do
-          chunk = content[cursor...(cursor + max_bytes)]
+        geared_send do |max_bytes, send|
+          chunk = content[max_bytes...(cursor + max_bytes)]
           is_last = ((cursor + max_bytes) > content.length)
-
-          send_data_frame chunk, end_stream: is_last do
-            mark_finished if is_last
-          end
-
-          cursor += max_bytes
-          break if is_last
+          cursor += chunk.length
+          send.call(chunk, is_last)
         end
       end
 
