@@ -158,9 +158,6 @@ module Appmaker
         sink = proc do |data, finished: false|
           is_finished = finished
           if data != nil
-            @window_size -= data.length
-            connection.change_window_size_by(-data.length)
-
             send_data_frame data, end_stream: finished do
               mark_finished if finished
             end
@@ -172,6 +169,7 @@ module Appmaker
       end
 
       def send_data_frame data, end_stream: false, &block
+        @window_size -= data.length
         writer = H2::BitWriter.new
         writer.write_bytes data
         frame = make_frame :DATA, writer
@@ -228,6 +226,7 @@ module Appmaker
       end
 
       def write data, &block
+        # TODO: Once using BufferedGear, just append more data to it.
         raise "Cannot write to geared stream!" if @gear
         send_data_frame data, &block
       end

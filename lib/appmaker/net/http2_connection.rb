@@ -102,6 +102,9 @@ module Appmaker
         writer.write_bytes frame.payload
 
         frame_data = writer.bytes_array
+        if frame.type == :DATA
+          change_window_size_by(-frame.payload_length)
+        end
 
         if frame.type == :HEADERS && frame_data.length >= 16384 # 16KiB
           Debug.warn("WARNING: Sending header frame over 16KiB (#{frame_data.length}B)")
