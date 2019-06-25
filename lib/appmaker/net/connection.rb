@@ -110,52 +110,51 @@ module Appmaker
           return
         end
 
+        has_remaining_data = false
         if @writing_buffer.length == 0
           @lock.unlock
-          return
-        end
-
-        has_remaining_data = true
-
-        begin
-          chunk = @writing_buffer[0]
-          data = chunk.data
-          wanted_length = data.length
-          written_length = @socket.write_nonblock data
-          if written_length < wanted_length
-            pending_data = data[written_length..-1]
-            chunk.data = pending_data
-          else
-            @writing_buffer.shift
-            @lock.unlock
-            locked = false
-            has_remaining_data = false
-            chunk.notify_finished
-          end
-        rescue IOError => e
-          with_coffee = (RUBY_PLATFORM == 'java')
-          if @socket.closed? || (with_coffee && e.message == 'Broken pipe')
+        else
+          has_remaining_data = true
+          begin
+            chunk = @writing_buffer[0]
+            data = chunk.data
+            wanted_length = data.length
+            written_length = @socket.write_nonblock data
+            if written_length < wanted_length
+              pending_data = data[written_length..-1]
+              chunk.data = pending_data
+            else
+              @writing_buffer.shift
+              @lock.unlock
+              locked = false
+              has_remaining_data = false
+              chunk.notify_finished
+            end
+          rescue IOError => e
+            with_coffee = (RUBY_PLATFORM == 'java')
+            if @socket.closed? || (with_coffee && e.message == 'Broken pipe')
+              locked ? _close_without_locking : close
+              return
+            elsif with_coffee && e.message == 'Protocol wrong type for socket'
+              Debug.error("EPROTOTYPE error")
+              locked ? _close_without_locking : close
+              return
+            else
+              puts "IOError raised, but socket is not closed!"
+              raise
+            end
+          rescue IO::WaitWritable
+          rescue Errno::EPIPE
+            Debug.error("BROKEN PIPE!")
             locked ? _close_without_locking : close
             return
-          elsif with_coffee && e.message == 'Protocol wrong type for socket'
+          rescue Errno::EPROTOTYPE
             Debug.error("EPROTOTYPE error")
             locked ? _close_without_locking : close
             return
-          else
-            puts "IOError raised, but socket is not closed!"
-            raise
+          ensure
+            @lock.unlock if locked
           end
-        rescue IO::WaitWritable
-        rescue Errno::EPIPE
-          Debug.error("BROKEN PIPE!")
-          locked ? _close_without_locking : close
-          return
-        rescue Errno::EPROTOTYPE
-          Debug.error("EPROTOTYPE error")
-          locked ? _close_without_locking : close
-          return
-        ensure
-          @lock.unlock if locked
         end
 
         write_intention = has_write_intention? || has_remaining_data
