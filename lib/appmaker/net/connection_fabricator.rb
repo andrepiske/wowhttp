@@ -23,7 +23,7 @@ module Appmaker
 
         # FIXME: Use accept_nonblock instead
         ssl_socket.accept
-        if RUBY_ENGINE == 'jruby' || true
+        if RUBY_ENGINE == 'jruby'
           proto = 'http/1.1'
         else
           proto = ssl_socket.alpn_protocol
