@@ -9,6 +9,12 @@ module Appmaker
         protocol_version = request.protocol.upcase
         host, port = request.host_with_port
 
+        hijack_proc = proc do |*args|
+          Debug.error("Not implemented: hijack!")
+          binding.pry
+          Debug.error("Done hijacking")
+        end
+
         env = {
           'GATEWAY_INTERFACE' => 'CGI/1.2',
           'SERVER_PROTOCOL' => protocol_version,
@@ -24,7 +30,16 @@ module Appmaker
           'SERVER_NAME' => host,
           'SERVER_PORT' => port,
 
+          'rack.version' => ::Rack::VERSION,
           'rack.input' => StringIO.new,
+          'rack.errors' => $stderr,
+          'rack.output' => $stdout,
+          'rack.url_scheme' => 'https',
+          'rack.multithread' => false,
+          'rack.multiprocess' => false,
+          'rack.run_once' => false,
+          'rack.hijack?' => true,
+          'rack.hijack' => hijack_proc
         }
 
         # HTTP specifics
