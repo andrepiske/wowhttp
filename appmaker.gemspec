@@ -13,7 +13,7 @@ Gem::Specification.new do |s|
   s.executables << 'appmaker'
 
   s.add_runtime_dependency 'marcel'
-  s.add_runtime_dependency 'nio4r', '~> 2.3.1'
+  s.add_runtime_dependency 'nio4r', '~> 2.0'
 
   if RUBY_PLATFORM =~ /java/
     s.add_dependency 'jruby-openssl', '~> 0.10.2'
