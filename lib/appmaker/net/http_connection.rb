@@ -43,9 +43,10 @@ module Appmaker
       end
 
       def on_close
-        if @handler
-          @handler.closed
+        h = @handler
+        if h
           @handler = nil
+          h.closed
           @state = :closed
         end
       end
@@ -89,13 +90,10 @@ module Appmaker
       private
 
       def recycle_connection
-        @lock.synchronize do
-          @handler.closed
+        h = @handler
+        if h
           @handler = nil
-
-          # FIXME: do we need these?
-          # _unregister_write_intention
-          # _register_read_intention
+          h.closed
         end
       end
 
