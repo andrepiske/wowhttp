@@ -20,6 +20,7 @@ module Appmaker
       def initialize server, monitor, socket
         @closed = false
         @server = server
+        @send_buffer_size = @server.config.connection_send_buffer_size
         @monitor = monitor
         @socket = socket
         @lock = Mutex.new
@@ -53,9 +54,8 @@ module Appmaker
         loop do
           return unless @read_callback && !@closed
           begin
-            how_much = 1024 * 16
-            data = @socket.read_nonblock how_much
-            more_to_read = true if data.length == how_much
+            data = @socket.read_nonblock @send_buffer_size
+            more_to_read = true if data.length == @send_buffer_size
           rescue OpenSSL::SSL::SSLErrorWaitReadable
             return
           rescue EOFError, Errno::ECONNRESET

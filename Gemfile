@@ -14,8 +14,9 @@ gem 'mustermann'
 gem 'erubi', '~> 1.7.0'
 
 group :development, :test do
+  gem 'pry'
+
   unless RUBY_ENGINE == 'jruby'
-    gem 'pry'
     gem 'pry-byebug'
   end
 end

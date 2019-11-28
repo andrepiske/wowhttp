@@ -101,8 +101,14 @@ module Appmaker
         writer.write_int32 frame.stream_identifier
         writer.write_bytes frame.payload
 
+        if frame.payload_length > @settings[:SETTINGS_MAX_FRAME_SIZE]
+          Debug.error("Frame payload too large")
+          binding.pry
+        end
+
         frame_data = writer.bytes_array
         if frame.type == :DATA
+          Debug.info("Send DATA frame of size #{frame.payload_length} (limit #{@settings[:SETTINGS_MAX_FRAME_SIZE]})")
           change_window_size_by(-frame.payload_length)
         end
 
@@ -175,6 +181,7 @@ module Appmaker
 
       def _send_initial_settings
         frame = make_frame :SETTINGS, nil
+
         send_frame frame do
           Debug.info("First SETTINGS sent")
         end
@@ -339,14 +346,20 @@ module Appmaker
           return
         end
 
+        Debug.info("Got settings from server")
         num_params = fr.payload_length / 6
         (0...num_params).each do |idx|
           offset = idx * 6
           id = fr.payload[offset...offset+2].pack('C*').unpack('S>')[0]
           value = fr.payload[offset+2...offset+6].pack('C*').unpack('I>')[0]
           settings[_h2_settingtype_to_sym(id)] = value
+
+          if Debug.info?
+            Debug.info("\tSet #{_h2_settingtype_to_sym(id)} to #{value}")
+          end
         end
-        Debug.info("Got some settings for stream #{fr.stream_identifier}, sending ACK") if Debug.info?
+
+        Debug.info("Got some settings, sending ACK") if Debug.info?
 
         if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != @window_size
           @window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]

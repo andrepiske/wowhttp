@@ -155,7 +155,9 @@ module Appmaker
       end
 
       def geared_send &tap
-        sink = proc do |data, finished: false|
+        @gear = Net::Gear::ProcGear.new nil, &tap
+
+        @gear.sink = proc do |data, finished: false|
           is_finished = finished
           if data != nil
             send_data_frame data, end_stream: finished do
@@ -163,7 +165,7 @@ module Appmaker
             end
           end
         end
-        @gear = Net::Gear::ProcGear.new sink, &tap
+
         connection.register_gear @gear
         @gear
       end

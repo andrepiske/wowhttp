@@ -39,6 +39,11 @@ module Appmaker::Net::H2
       @cursor += 1
     end
 
+    def write_int16 value
+      write_byte((value >> 8) & 0xFF)
+      write_byte(value & 0xFF)
+    end
+
     def write_int24 value
       write_byte((value >> 16) & 0xFF)
       write_byte((value >> 8) & 0xFF)

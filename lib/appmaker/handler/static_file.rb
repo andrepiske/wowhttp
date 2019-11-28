@@ -24,6 +24,7 @@ module Appmaker
 
         if @request.headers_hash['if-modified-since']
           if_modified_since = DateTime.parse(@request.headers_hash['if-modified-since'])
+
           if file_mtime <= if_modified_since
             response.code = 304
             @http_connection.send_header_and_finish response
@@ -36,13 +37,6 @@ module Appmaker
 
         response.set_header 'Accept-Ranges', 'bytes'
 
-        # types = {
-        #   '.html' => 'text/html',
-        #   '.mp4' => 'video/mp4',
-        #   '.jpg' => 'image/jpeg',
-        #   '.js' => 'text/javascript',
-        # }
-        # mime_type = types.fetch File.extname(file_path), 'application/octet-stream'
         mime_type = Marcel::MimeType.for extension: File.extname(file_path)
         response.set_header 'Content-Type', mime_type
 
