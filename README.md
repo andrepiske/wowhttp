@@ -1,8 +1,8 @@
 ## What is this?
 
-I'm making an HTTP(S) server from scratch just for fun.
+I'm making an HTTP(S) server from scratch mostly for fun.
 
-This is an experiment, the code base changes a lot. There are no tests.
+**This is an experiment**, the code base changes a lot. There are no tests although I'm currently running against [h2spec](https://github.com/summerwind/h2spec).
 
 ## Features
 
@@ -11,30 +11,29 @@ This is an experiment, the code base changes a lot. There are no tests.
 - Thread-safe
 - TLS 1.2 support
 - Streaming responses
+- Compatibility with Rack through an adapter
 
 ## Roadmap
 
-- Refactor code to create adapters
-- Create rack adapter
+Currently being worked on:
+
+- Make it pass all specs of [h2spec](https://github.com/summerwind/h2spec)
+
+Next steps, from top priority to lesser:
+
+- Make "gears" closeable
+- Make "gears" thread-safe 
+- Write some docs
 - Create reverse-proxy adapter
-- Make "gears" thread-safe
+- Refactor code to create adapters
 - Get it working with jruby and real threads
-- Write tests
+- Have a decent logging mechanism
+- Write unit tests
 - Support TLS 1.3
 - Support for Websockets
 - Support for let's encrypt ACME protocol
-- Have a decent logging mechanism
 
 ## Setup & run
 
-This likely won't work out of the box because some files are missing and some SSL certificate setup is needed.
+Don't, it's an experiment. Or, read the code and figure it out yourself :)
 
-Make sure you `$ bundle install` before running.
-
-`cd` to the `some_code` folder then open the server:
-```shell
-$ cd some_code
-$ ../bin/appmaker main.rb
-```
-
-Then navigate to http://localhost:3999/
