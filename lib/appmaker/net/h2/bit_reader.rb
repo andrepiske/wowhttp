@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 module Appmaker::Net::H2
   class BitReader
+    DecoderError = Class.new(HpackDecoderError)
+
     attr_accessor :cursor
 
     def initialize data, start_at=0
@@ -55,20 +57,20 @@ module Appmaker::Net::H2
       index = @cursor / 8
       bit_index = @cursor % 8
       @cursor += 1
-      (@buffer[index] & (128 >> bit_index)) > 0 ? 1 : 0
+      (byteat(index) & (128 >> bit_index)) > 0 ? 1 : 0
     end
 
     def read_bytes n
       index = @cursor / 8
       @cursor += 8 * n + ((@cursor - (8 % 8)) % 8)
-      @buffer[index...(index+n)]
+      bytesat(index...(index+n))
     end
 
     def finish_byte
       # TODO: check bounds?
       index = @cursor / 8
       mask = (1 << (8 - (@cursor % 8))) - 1
-      value = @buffer[index] & mask
+      value = byteat(index) & mask
       @cursor += 8 - (@cursor % 8)
       value
     end
@@ -82,6 +84,20 @@ module Appmaker::Net::H2
     end
 
     private
+
+    def byteat index
+      if index < 0 || index >= @buffer.length
+        raise DecoderError.new
+      end
+      @buffer[index]
+    end
+
+    def bytesat range
+      if range.min < 0 || range.max >= @buffer.length
+        raise DecoderError.new
+      end
+      @buffer[range]
+    end
 
     def set_buffer data
       if data.is_a?(String)
