@@ -8,6 +8,7 @@ end
 require 'cgi'
 require 'forwardable'
 require 'openssl'
+require 'set'
 
 require 'appmaker/debug'
 require 'appmaker/request'

@@ -32,29 +32,43 @@ module Appmaker
     end
 
     class Http2StreamingBuffer
-      EXPECTED_PREFACE = [0x50,0x52,0x49,0x20,0x2a,0x20,0x48,0x54,0x54,0x50,0x2f,0x32,0x2e,0x30,0x0d,0x0a,0x0d,0x0a,0x53,0x4d,0x0d,0x0a,0x0d,0x0a]
+      EXPECTED_PREFACE = [0x50,0x52,0x49,0x20,0x2a,0x20,0x48,0x54,0x54,0x50,0x2f,0x32,0x2e,0x30,0x0d,0x0a,0x0d,0x0a,0x53,0x4d,0x0d,0x0a,0x0d,0x0a].freeze
+
+      attr_reader :error
 
       def initialize preface_sent, &emit_callback
         @emit_callback = emit_callback
         @state = preface_sent ? :read_frame_header : :hope_for_preface
         @buffer = []
+        @error = nil
       end
 
       def feed data
         send "_feed_#{@state}", data
       end
 
+      def error?
+        @error != nil
+      end
+
       private
+
+      def _feed_error data
+        nil
+      end
 
       def _feed_hope_for_preface data
         bytes = data.bytes
         @buffer += bytes
         if @buffer.length >= 24
-          unless @buffer[0...24] == EXPECTED_PREFACE
-            raise "Invalid HTTP2 preface"
+          if @buffer[0...24] == EXPECTED_PREFACE
+            @buffer = @buffer[24..-1]
+            @state = :read_frame_header
+          else
+            @error = :protocol_error
+            @state = :error
           end
-          @buffer = @buffer[24..-1]
-          @state = :read_frame_header
+
           _backfeed
         end
       end
@@ -71,7 +85,7 @@ module Appmaker
           0x07 => :GOAWAY,
           0x08 => :WINDOW_UPDATE,
           0x09 => :CONTINUATION
-        }[type]
+        }.fetch(type, :UNSUPPORTED)
       end
 
       def _feed_read_frame_header data
@@ -83,7 +97,6 @@ module Appmaker
           frame_flags = header[4]
           stream_identifier = header[5..-1].pack('C*').unpack('I>')[0]
           # TODO: remove leftmost bit from stream_identifier
-          raise "Invalid frame type: #{header[3]}" if frame_type == nil
           @frame = H2::Frame.new(frame_type, frame_flags, payload_length, stream_identifier, nil)
           @buffer = @buffer[9..-1]
 
@@ -114,7 +127,9 @@ module Appmaker
       end
 
       def _emit_frame frame
-        @emit_callback.call frame
+        if frame.type != nil
+          @emit_callback.call frame
+        end
       end
     end
 

@@ -72,7 +72,7 @@ module Appmaker
           _mark_unsupported_protocol(line_match[3])
         end
 
-        @request.verb = line_match[1].to_sym
+        @request.verb = line_match[1].upcase
         @request.path = CGI.unescape line_match[2]
 
         if http_major_version == 2

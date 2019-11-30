@@ -50,8 +50,10 @@ module Appmaker
       attr_accessor :connection # the Http2Connection behind this
       attr_accessor :window_size # flow-control window size
       attr_accessor :recv_window_size # flow-control window size for receiving data
+      attr_accessor :hpack_context
       attr_reader :gear
       attr_reader :is_async
+      attr_reader :header_state
 
       def initialize(sid, connection, request_handler_fabricator)
         @state = :idle
@@ -60,6 +62,9 @@ module Appmaker
         @request_handler_fabricator = request_handler_fabricator
         @window_size = 65535
         @recv_window_size = 65535
+
+        @header_state = :initial
+        @header_fragments = []
       end
 
       def set_keepalive *args
@@ -82,23 +87,79 @@ module Appmaker
         end
       end
 
-      def receive_headers headers, flags:
-        raise 'Invalid state' unless @state == :idle
-        @headers = headers
-        @state = :open
-        @finished = false
+      def add_header_block_fragment fragment, flags:
+        if flags[:_continuation] && @header_state != :partial
+          Debug.info("Continuation flag set but header_state=#{@header_state}")
+          return :invalid_state
+        end
+        if !flags[:_continuation] && @header_state != :initial
+          Debug.info("reader_state=#{@header_state} but no continuation flag")
+          return :invalid_state
+        end
+        if @header_state == :initial && @state == :half_closed_remote
+          Debug.info("reader_state=#{@header_state} but state=half_closed_remote, closing")
+          return :invalid_state
+        end
 
-        set_state_to :open
+        @header_fragments += fragment
+
+        if Debug.info?
+          str_flags = flags.select { |k, v| v }.keys.join(',')
+          Debug.info("Add header block fragment with flags=#{str_flags} stream=#{@sid}")
+        end
+
+        if flags[:end_headers]
+          result = process_header_block @header_fragments
+          return result unless result == :ok
+
+          @header_state = :initial
+          @header_fragments.clear
+
+          if @state == :idle
+            @finished = false
+            set_state_to :open
+          end
+        else
+          @header_state = :partial
+        end
 
         if flags[:end_stream]
           set_state_to :half_closed_remote
+        end
+
+        if @header_state = :initial && %i(open half_closed_remote).include?(@state) && flags[:end_headers]
           _process_request unless @handler != nil
         end
+
+        :ok
+      end
+
+      def process_header_block header_data
+        decoder = H2::HpackDecoder.new header_data, @hpack_context
+
+        begin
+          headers = decoder.decode_all
+        rescue H2::HpackError => e
+          Debug.info("Hpack error: #{e}")
+          return :hpack_error
+        end
+
+        if Debug.info?
+          Debug.info("Reader headers:")
+          headers.each do |name, value|
+            Debug.info("\t#{name} => #{value}")
+          end
+        end
+
+        @headers ||= {}
+        headers.each do |key, value|
+          @headers[key] = value
+        end
+
+        :ok
       end
 
       def receive_data data, end_stream
-        raise 'Invalid state' unless @state == :open
-
         if end_stream
           set_state_to :half_closed_remote
         end
@@ -198,8 +259,10 @@ module Appmaker
       end
 
       def finish
-        mark_finished
-        connection.send_rst_stream @sid
+        set_state_to :half_closed_local
+        connection.send_rst_stream @sid do
+          mark_finished
+        end
       end
 
       def finished?
