@@ -25,6 +25,7 @@ Next steps, from top priority to lesser:
 - Make "gears" thread-safe 
 - Write some docs
 - Create reverse-proxy adapter
+- Create a decent example and "Setup & run" docs
 - Refactor code to create adapters
 - Get it working with jruby and real threads
 - Have a decent logging mechanism
