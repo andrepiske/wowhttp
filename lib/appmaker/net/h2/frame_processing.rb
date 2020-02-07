@@ -298,8 +298,6 @@ module Appmaker
 
         Debug.info("Got some settings, sending ACK") if Debug.info?
 
-        # binding.pry if new_settings[:SETTINGS_INITIAL_WINDOW_SIZE] == 2
-
         if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != new_settings[:SETTINGS_INITIAL_WINDOW_SIZE]
 
           # TODO: move this somewhere else
