@@ -127,7 +127,7 @@ module Appmaker
           set_state_to :half_closed_remote
         end
 
-        if @header_state = :initial && %i(open half_closed_remote).include?(@state) && flags[:end_headers]
+        if @header_state == :initial && %i(open half_closed_remote).include?(@state) && flags[:end_headers]
           _process_request unless @handler != nil
         end
 
