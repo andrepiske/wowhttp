@@ -276,24 +276,47 @@ module Appmaker
           return
         end
 
-        Debug.info("Got settings from server")
+        new_settings = {}
+
+        Debug.info("Got settings from client")
         num_params = fr.payload_length / 6
         (0...num_params).each do |idx|
           offset = idx * 6
           id = fr.payload[offset...offset+2].pack('C*').unpack('S>')[0]
           value = fr.payload[offset+2...offset+6].pack('C*').unpack('I>')[0]
-          settings[h2_settingtype_to_sym(id)] = value
+          new_settings[h2_settingtype_to_sym(id)] = value
 
           if Debug.info?
             Debug.info("\tSet #{h2_settingtype_to_sym(id)} to #{value}")
           end
         end
 
+        if (new_settings[:SETTINGS_INITIAL_WINDOW_SIZE] || 0) > 2147483647
+          Debug.info("Initial settings window size is too large, terminating")
+          return terminate_connection :FLOW_CONTROL_ERROR
+        end
+
         Debug.info("Got some settings, sending ACK") if Debug.info?
 
-        if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != @window_size
-          @window_size = @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
-          Debug.info("Initial window size changed to = #{@window_size}")
+        # binding.pry if new_settings[:SETTINGS_INITIAL_WINDOW_SIZE] == 2
+
+        if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != new_settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+
+          # TODO: move this somewhere else
+          delta = new_settings[:SETTINGS_INITIAL_WINDOW_SIZE] - @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+          @h2streams.values.each do |stream|
+            stream.change_window_size_by delta
+
+            if stream.window_size > 2147483647
+              Debug.info("Window size grew too large because initial window size changed, terminating")
+              return terminate_connection :FLOW_CONTROL_ERROR
+            end
+          end
+          Debug.info("Initial window size changed by #{delta}")
+        end
+
+        new_settings.each do |key, value|
+          @settings[key] = value
         end
 
         ack_frame = H2::Frame.new(:SETTINGS, 1, 0, 0, '')

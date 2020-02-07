@@ -200,7 +200,7 @@ module Appmaker
 
       # We are blocked from sending data right now
       def blocked_from_sending?
-        @state == :half_closed_remote && sending_limit == 0
+        @state == :half_closed_remote && sending_limit <= 0
       end
 
       # Whether we are intending to send more data
