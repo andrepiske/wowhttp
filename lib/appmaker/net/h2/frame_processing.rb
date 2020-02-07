@@ -62,13 +62,14 @@ module Appmaker
         reader = H2::BitReader.new fr.payload
         error_code = reader.read_int32
         Debug.warn("Got RST_STREAM with error code #{error_code}") unless error_code == 0x08 # 8 = CANCEL
-        stream = @h2streams[fr.stream_identifier]
+        sid = fr.stream_identifier
+        stream = @h2streams[sid]
         if stream
           return terminate_connection(:PROTOCOL_ERROR) if stream.state == :idle
 
           stream.on_rst_stream
         else
-          terminate_connection :PROTOCOL_ERROR
+          terminate_connection(:PROTOCOL_ERROR) unless sid_was_closed?(sid)
         end
       end
 
@@ -113,6 +114,18 @@ module Appmaker
           return terminate_connection :PROTOCOL_ERROR
         end
 
+        if sid_was_closed?(fr.stream_identifier)
+          return terminate_connection :STREAM_CLOSED
+        end
+
+        if !stream || !%i(open half_closed_local).include?(stream.state)
+          return terminate_connection :PROTOCOL_ERROR
+        end
+
+        if ![:open, :half_closed_remote].include?(stream.state)
+          return terminate_connection(:STREAM_CLOSED)
+        end
+
         data = fr.payload
         if flag_padded
           pad_length = fr.payload[0]
@@ -120,14 +133,6 @@ module Appmaker
             return terminate_connection :PROTOCOL_ERROR
           end
           data = fr.payload[1..-(pad_length+1)]
-        end
-
-        if sid_was_closed?(fr.stream_identifier)
-          return terminate_connection :STREAM_CLOSED
-        end
-
-        if !stream || !%i(open half_closed_local).include?(stream.state)
-          return terminate_connection :PROTOCOL_ERROR
         end
 
         @recv_window_size -= fr.payload_length
