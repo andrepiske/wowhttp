@@ -30,6 +30,19 @@ module Appmaker
           return terminate_connection :INTERNAL_ERROR
         end
 
+        if !@awaiting_continuation_for && fr.type == :HEADERS
+          if (fr.flags & 0x04) == 0
+            @awaiting_continuation_for = fr.stream_identifier
+          end
+        elsif @awaiting_continuation_for
+          if fr.type != :CONTINUATION && fr.stream_identifier != @awaiting_continuation_for
+            Debug.info("Expected CONTINUATION frame for #{@awaiting_continuation_for}, but got #{fr.type} for #{fr.stream_identifier}")
+            return terminate_connection :PROTOCOL_ERROR
+          else
+            @awaiting_continuation_for = nil if (fr.flags & 0x04) != 0
+          end
+        end
+
         if !%i(CONTINUATION RST_STREAM).include?(fr.type) && stream = @h2streams[fr.stream_identifier]
           if %i(open idle half_closed_remote).include?(stream.state) && stream.header_state == :partial
             Debug.info("Expected CONTINUATION frame, but got #{fr.type}")
