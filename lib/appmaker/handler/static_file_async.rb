@@ -84,7 +84,6 @@ module Appmaker
         file.seek range.min
         amount_to_send = range.size
 
-        # @http_connection.hint! send_buffer_size: @buffer_size
         @http_connection.send_header response
 
         buffered_gear = Net::Gear::BufferedGear.new(@buffer_size) do |limit, send_proc|
@@ -102,6 +101,7 @@ module Appmaker
 
             send_proc.call content, finished: (amount_to_send <= 0)
           rescue IO::WaitReadable
+            # No action needed here. It'll be automatically retried
           end
         end
 
