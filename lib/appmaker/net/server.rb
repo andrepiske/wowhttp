@@ -47,8 +47,15 @@ module Appmaker
       def initialize address, port, configuration={}
         @config = Configuration.new(address, port, configuration)
 
-        backend = (RUBY_ENGINE == 'jruby' ? :java : :kqueue)
-        @selector = ::NIO::Selector.new(backend)
+        backends = [:epoll, :kqueue, :java]
+
+        begin
+          backend = backends.shift
+          @selector = ::NIO::Selector.new(backend)
+        rescue ArgumentError
+          retry unless backends.empty?
+        end
+
         @clients = Hash.new
         @lock = Mutex.new
         @signaled = false
