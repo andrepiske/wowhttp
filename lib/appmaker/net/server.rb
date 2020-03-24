@@ -10,6 +10,10 @@ module Appmaker
 
         attr_reader :enable_debug_signaling
 
+        # Profiling configuration. Must have "stackprof" gem installed
+        attr_reader :enable_profiling
+        attr_reader :profiling_result_file
+
         # Allowed HTTP protocols. Must be an array. Valid values are "h2" and "http/1.1"
         # Defaults to all protocols.
         attr_reader :allowed_protocols
@@ -30,11 +34,16 @@ module Appmaker
         end
 
         alias_method :enable_debug_signaling?, :enable_debug_signaling
+        alias_method :enable_profiling?, :enable_profiling
 
         private
 
         def set_conf conf
           @enable_debug_signaling = conf.delete(:enable_debug_signaling)
+          @enable_profiling = conf.delete(:enable_profiling)
+          @profiling_result_file = conf.delete(:profiling_result_file)
+
+          require 'stackprof' if @enable_profiling
 
           @allowed_protocols = conf.delete(:allowed_protocols) || ['h2', 'http/1.1']
 
@@ -124,8 +133,18 @@ module Appmaker
       def run_forever
         loop do
           iterate
-          if @signaled && !@config.enable_debug_signaling
-            Debug.info("Signaled, exiting loop")
+          if @signaled
+            Debug.info 'Signaled, exiting...'
+
+            if @config.enable_profiling?
+              Debug.info 'Dumping profile info...'
+
+              StackProf.results @config.profiling_result_file
+
+              Debug.info 'Done'
+            end
+
+            return
           end
         end
       end
@@ -147,12 +166,16 @@ module Appmaker
 
         # Debug.info("w=#{writables.length}/r=#{readables.length}/n=#{new_clients.length}/c=#{@clients.keys.length}")
 
+        StackProf.start(mode: :cpu) if @config.enable_profiling?
+
         writables.each &:notify_writeable
         readables.each &:notify_readable
         new_clients.each do |io|
           accept_client_connection(io)
         end
-      end
+
+        StackProf.stop if @config.enable_profiling?
+     end
 
       def register_closed connection
         @lock.synchronize do
