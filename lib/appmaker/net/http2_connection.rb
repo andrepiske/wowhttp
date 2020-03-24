@@ -140,7 +140,7 @@ module Appmaker
 
         frame_data = writer.bytes_array
         if frame.type == :DATA
-          Debug.info("Send DATA frame of size #{frame.payload_length} (limit #{@settings[:SETTINGS_MAX_FRAME_SIZE]})")
+          Debug.info("\tsend DATA frame of size #{frame.payload_length} (limit #{@settings[:SETTINGS_MAX_FRAME_SIZE]})")
           change_window_size_by(-frame.payload_length)
         end
 
