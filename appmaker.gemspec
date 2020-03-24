@@ -13,6 +13,7 @@ Gem::Specification.new do |s|
   s.executables << 'appmaker'
 
   s.add_runtime_dependency 'marcel'
+  s.add_runtime_dependency 'arraybuffer', '~> 0.0.4'
   s.add_runtime_dependency 'nio4r', '~> 2.0'
   s.add_runtime_dependency 'concurrent-ruby', '~> 1.0'
 
