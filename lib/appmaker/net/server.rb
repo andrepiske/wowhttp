@@ -59,6 +59,8 @@ module Appmaker
         @clients = Hash.new
         @lock = Mutex.new
         @signaled = false
+        @has_quickack = defined?(::Socket::TCP_QUICKACK)
+        @has_nodelay = defined?(::Socket::TCP_NODELAY)
 
         use_debug_signaling = @config.enable_debug_signaling?
         Signal.trap 'INT' do
@@ -184,6 +186,9 @@ module Appmaker
       def accept_client_connection io
         client_socket = io.accept_nonblock exception: false
         return if client_socket == :wait_readable
+
+        client_socket.setsockopt(:IPPROTO_TCP, :TCP_NODELAY, 1) if @has_nodelay
+        client_socket.setsockopt(:IPPROTO_TCP, :TCP_QUICKACK, 1) if @has_quickack
 
         fabricator = ConnectionFabricator.new self, @handler_klass
 
