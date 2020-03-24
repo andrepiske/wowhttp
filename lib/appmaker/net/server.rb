@@ -101,15 +101,14 @@ module Appmaker
           @ssl_ctx.ssl_version = :TLSv1_2
         end
 
-        # jruby-openssl does not support ALPN yet
-        if !is_jruby
+        if @ssl_ctx.respond_to?(:alpn_protocols=)
           allowed_protocols = @config.allowed_protocols
 
           @ssl_ctx.alpn_protocols = allowed_protocols.dup
           @ssl_ctx.alpn_select_cb = lambda do |protocols|
             (allowed_protocols & protocols).first || allowed_protocols[-1]
           end
-        else
+        elsif @ssl_ctx.respond_to?(:npn_protocols=)
           @ssl_ctx.npn_protocols = @config.allowed_protocols
         end
 
