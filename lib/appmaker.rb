@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 module Appmaker
+  # Is debug mode enabled?
   def self.debug?
     ::Appmaker::Debug.enabled?
   end
 
+  # Is monitoring enabled?
   def self.mon?
     $appmaker_mon[:enabled]
   end
