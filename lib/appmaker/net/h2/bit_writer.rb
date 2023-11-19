@@ -79,6 +79,7 @@ module Appmaker::Net::H2
         finish_byte value
       else
         finish_byte(limit - 1) # fill with 1's
+        value -= (limit - 1)
         while value >= 128
           write_byte((value % 128) + 128)
           value = value / 128

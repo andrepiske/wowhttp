@@ -19,6 +19,19 @@ describe Appmaker::Net::H2::BitWriter do
 
       expect(subject_bytes).to eq(expected_bytes)
     end
+
+    context 'when number spans multiple bytes' do
+      let(:expected_bytes) { [95, 241, 203, 159, 45, 21] }
+
+      it 'produces expected bytes' do
+        subject.write_bit(0)
+        subject.write_bit(1)
+        subject.write_prefixed_int(94889488, 5)
+        subject.write_byte(21)
+
+        expect(subject_bytes).to eq(expected_bytes)
+      end
+    end
   end
 
   describe '#write_byte' do

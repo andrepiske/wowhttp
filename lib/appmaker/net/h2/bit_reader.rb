@@ -27,11 +27,12 @@ module Appmaker::Net::H2
     def read_string
       h = read_bit
       str_length = read_integer 7
+      return "".b if str_length == 0
       bytes = read_bytes str_length
       if h == 1 # if it is huffman coded, then decode it
         StringDecoder.decode_string bytes
       else
-        bytes.pack('C*').force_encoding('ASCII-8BIT')
+        bytes.pack('C*').b # force_encoding('ASCII-8BIT')
       end
     end
 

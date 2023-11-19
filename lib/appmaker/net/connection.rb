@@ -30,6 +30,13 @@ module Appmaker
         @writing_buffer = []
       end
 
+      def mon_write_buffer_length
+        @writing_buffer.map { |c| c.data.length }.sum
+      end
+      def mon_write_buffer_chunks
+        @writing_buffer.length
+      end
+
       def write data, &finished
         chunk = Chunk.new(data, &finished)
         @lock.synchronize do

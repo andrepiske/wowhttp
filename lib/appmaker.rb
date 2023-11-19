@@ -3,6 +3,26 @@ module Appmaker
   def self.debug?
     ::Appmaker::Debug.enabled?
   end
+
+  def self.mon?
+    $appmaker_mon[:enabled]
+  end
+end
+
+if ENV['APPMAKER_MON'] == '1'
+  $appmaker_mon = { enabled: true, metrics: {
+    readables: 0,
+    writables: 0,
+    new_clients: 0,
+    clients: 0,
+
+    streams: 0,
+    closed_streams: 0,
+    write_buffer_length: 0,
+    write_buffer_chunks: 0,
+  } }
+else
+  $appmaker_mon = { enabled: false }
 end
 
 require 'cgi'

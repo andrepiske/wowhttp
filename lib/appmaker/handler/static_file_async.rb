@@ -68,6 +68,7 @@ module Appmaker
           response.code = 206
           response.set_header 'Content-Length', sending_range.size
           response.set_header 'Content-Range', "bytes #{start_offset}-#{end_offset}/#{file_size}"
+
           return serve_file_contents response, file_path, sending_range
         end
 

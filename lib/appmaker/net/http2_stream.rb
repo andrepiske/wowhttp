@@ -151,9 +151,47 @@ module Appmaker
           end
         end
 
+        pseudos_finished = false
+        valid_pseudos = %w(:method :scheme :path :authority)
+
         @headers ||= {}
         headers.each do |key, value|
+          if key[0] == ':'
+            if !valid_pseudos.include?(key)
+              Debug.info "Got invalid pseudo-header '#{key}', terminating"
+              return connection.terminate_connection :PROTOCOL_ERROR
+            end
+            if pseudos_finished
+              Debug.info "Already finished reading pseudo-headers (got #{key}), terminating"
+              return connection.terminate_connection :PROTOCOL_ERROR
+            end
+            if value.empty?
+              Debug.info "Got empty value for pseudo-header #{key}, terminating"
+              return connection.terminate_connection :PROTOCOL_ERROR
+            end
+            if @headers.has_key?(key)
+              Debug.info "Got duplicated pseudo-header #{key}, terminating"
+              return connection.terminate_connection :PROTOCOL_ERROR
+            end
+          else
+            pseudos_finished = true
+          end
+
+          if key == 'te' && value != 'trailers'
+            Debug.info "Invalid TE header value '#{value}', terminating"
+            return connection.terminate_connection :PROTOCOL_ERROR
+          end
+          if key == 'connection'
+            Debug.info "Got connection header '#{value}', terminating"
+            return connection.terminate_connection :PROTOCOL_ERROR
+          end
           @headers[key] = value
+        end
+
+        missing_pseudos = valid_pseudos - @headers.keys
+        unless missing_pseudos.empty?
+          Debug.info "Missing pseudo headers: #{missing_pseudos.join(', ')}, terminating"
+          return connection.terminate_connection :PROTOCOL_ERROR
         end
 
         :ok

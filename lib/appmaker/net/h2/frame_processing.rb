@@ -55,18 +55,66 @@ module Appmaker
           return
         end
 
+        sid = fr.stream_identifier
+        if sid > 0 && ![:HEADERS, :PRIORITY, :WINDOW_UPDATE].include?(fr.type)
+          stream = @h2streams[sid]
+          if !stream || stream.state == :closed
+            Debug.info("Got frame for closed stream (#{sid}), terminating")
+            return terminate_connection :PROTOCOL_ERROR
+          end
+        end
+
         method_name = "handle_h2_#{fr.type.to_s.downcase}_frame"
         send(method_name, fr)
       end
 
       def handle_h2_priority_frame fr
+        if fr.stream_identifier == 0
+          Debug.info "Got PRIORITY for stream 0, terminating"
+          return terminate_connection :PROTOCOL_ERROR
+        end
+        if fr.payload_length != 5
+          Debug.info "Got PRIORITY with invalid payload size (#{fr.payload_length}), terminating"
+          return terminate_connection :FRAME_SIZE_ERROR
+        end
+
         reader = H2::BitReader.new fr.payload
+        parse_priority_frame_payload(reader, fr)
+      end
+
+      def parse_priority_frame_payload(reader, fr)
+        dependency = reader.read_int32
+        exclusive = (dependency & 0x1000_000 != 0)
+        dependency &= 0x7FFF_FFFF
+        weight = reader.read_byte
+
+        if dependency == fr.stream_identifier
+          Debug.info "PRIORITY: Stream can't depend on itself, terminating"
+          terminate_connection :PROTOCOL_ERROR
+          return false
+        end
+
+        # binding.pry
+
         # FIXME: no-op for now
+
+        return true
       end
 
       def handle_h2_ping_frame fr
+        if fr.payload_length != 8
+          Debug.info "Got PING with invalid payload size (#{fr.payload_length}), terminating"
+          return terminate_connection :FRAME_SIZE_ERROR
+        end
+
+        is_ack = ((fr.flags & 1) == 1)
+        if is_ack
+          Debug.info("Ignoring PING with ACK flag set")
+          return
+        end
+
         reader = H2::BitReader.new fr.payload
-        ack_frame = H2::Frame.new(:PING, 1, 8, 0, fr.payload)
+        ack_frame = H2::Frame.new(:PING, 1, 8, 0, fr.payload, false)
         send_frame ack_frame
         Debug.info("responding to ping request")
       end
@@ -182,7 +230,7 @@ module Appmaker
             Debug.info("Sending increment of #{increment / 1024}kb, WS=#{@recv_window_size}")
             bw = H2::BitWriter.new
             bw.write_int32 increment
-            send_frame H2::Frame.new(:WINDOW_UPDATE, 0, 4, 0, bw.bytes)
+            send_frame H2::Frame.new(:WINDOW_UPDATE, 0, 4, 0, bw.bytes, false)
           end
         end
 
@@ -197,7 +245,7 @@ module Appmaker
             Debug.info("Sending increment of #{increment / 1024}kb, WS=#{@recv_window_size} stream=#{fr.stream_identifier}") if Debug.info?
             bw = H2::BitWriter.new
             bw.write_int32 increment
-            send_frame H2::Frame.new(:WINDOW_UPDATE, 0, 4, fr.stream_identifier, bw.bytes)
+            send_frame H2::Frame.new(:WINDOW_UPDATE, 0, 4, fr.stream_identifier, bw.bytes, false)
           end
         end
 
@@ -231,6 +279,11 @@ module Appmaker
           end
         end
 
+        if flag_priority
+          reader = H2::BitReader.new(fr.payload[pad_length...(pad_length+5)])
+          return unless parse_priority_frame_payload(reader, fr)
+        end
+
         fragment = fr.payload[hb_index..-(pad_length+1)]
 
         if fr.stream_identifier <= 0
@@ -239,7 +292,7 @@ module Appmaker
 
         created, stream = get_or_create_stream fr.stream_identifier
 
-        if !stream || !%i(open idle half_closed_remote).include?(stream.state)
+        if !stream || !%i(idle).include?(stream.state)
           return terminate_connection :PROTOCOL_ERROR
         end
 
@@ -270,9 +323,22 @@ module Appmaker
       end
 
       def handle_h2_settings_frame fr
+        if fr.payload_length % 6 != 0
+          Debug.info "Invalid payload length: #{fr.payload_length}, terminating"
+          return terminate_connection :FRAME_SIZE_ERROR
+        end
+
+        if fr.stream_identifier != 0
+          Debug.info "Got SETTINGS for invalid stream (#{fr.stream_identifier}), terminating"
+          return terminate_connection :PROTOCOL_ERROR
+        end
+
         is_ack = ((fr.flags & 1) == 1)
         if is_ack
           Debug.info "Client ACK-ed our SETTINGS frame"
+
+          terminate_connection :FRAME_SIZE_ERROR if fr.payload_length != 0
+
           return
         end
 
@@ -291,33 +357,51 @@ module Appmaker
           end
         end
 
-        if (new_settings[:SETTINGS_INITIAL_WINDOW_SIZE] || 0) > 2147483647
-          Debug.info("Initial settings window size is too large, terminating")
-          return terminate_connection :FLOW_CONTROL_ERROR
+        unless [nil, 0, 1].include?(new_settings[:SETTINGS_ENABLE_PUSH])
+          Debug.info "Client sent invalid SETTINGS_ENABLE_PUSH (#{new_settings[:SETTINGS_ENABLE_PUSH]}), terminating"
+          return terminate_connection :PROTOCOL_ERROR
+        end
+
+        if new_settings.has_key?(:SETTINGS_MAX_FRAME_SIZE)
+          value = new_settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+
+          unless (16_384..2_147_483_647) === value
+            Debug.info "Initial settings window size is out of bounds, terminating"
+            return terminate_connection :FLOW_CONTROL_ERROR
+          end
         end
 
         Debug.info("Got some settings, sending ACK") if Debug.info?
 
-        if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != new_settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+        if new_settings.has_key?(:SETTINGS_INITIAL_WINDOW_SIZE)
+          new_value = new_settings[:SETTINGS_INITIAL_WINDOW_SIZE]
 
-          # TODO: move this somewhere else
-          delta = new_settings[:SETTINGS_INITIAL_WINDOW_SIZE] - @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
-          @h2streams.values.each do |stream|
-            stream.change_window_size_by delta
-
-            if stream.window_size > 2147483647
-              Debug.info("Window size grew too large because initial window size changed, terminating")
-              return terminate_connection :FLOW_CONTROL_ERROR
-            end
+          if new_value > 2147483647
+            Debug.info("Got invalid value for SETTINGS_INITIAL_WINDOW_SIZE (#{new_value}), terminating")
+            return terminate_connection :FLOW_CONTROL_ERROR
           end
-          Debug.info("Initial window size changed by #{delta}")
+
+          if @settings[:SETTINGS_INITIAL_WINDOW_SIZE] != new_settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+          # TODO: move this somewhere else
+
+            delta = new_value - @settings[:SETTINGS_INITIAL_WINDOW_SIZE]
+            @h2streams.values.each do |stream|
+              stream.change_window_size_by delta
+
+              if stream.window_size > 2147483647
+                Debug.info("Window size grew too large because initial window size changed, terminating")
+                return terminate_connection :FLOW_CONTROL_ERROR
+              end
+            end
+            Debug.info("Initial window size changed by #{delta}")
+          end
         end
 
         new_settings.each do |key, value|
           @settings[key] = value
         end
 
-        ack_frame = H2::Frame.new(:SETTINGS, 1, 0, 0, '')
+        ack_frame = H2::Frame.new(:SETTINGS, 1, 0, 0, '', false)
         send_frame ack_frame
       end
 

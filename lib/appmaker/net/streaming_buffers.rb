@@ -96,8 +96,9 @@ module Appmaker
           frame_type = _frame_type_name(header[3])
           frame_flags = header[4]
           stream_identifier = header[5..-1].pack('C*').unpack('I>')[0]
-          # TODO: remove leftmost bit from stream_identifier
-          @frame = H2::Frame.new(frame_type, frame_flags, payload_length, stream_identifier, nil)
+          reserved_bit = (stream_identifier & 2147483648 != 0)
+          stream_identifier &= 0x7FFF_FFFF if reserved_bit
+          @frame = H2::Frame.new(frame_type, frame_flags, payload_length, stream_identifier, nil, reserved_bit)
           @buffer = @buffer[9..-1]
 
           if payload_length > 0

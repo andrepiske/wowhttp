@@ -20,6 +20,15 @@ module Appmaker::Net::H2
 
     private
 
+    def assert_lowercase(str)
+      invalid = ('A'.ord..'Z'.ord)
+      str.each_codepoint do |c|
+        return false if invalid === c
+      end
+
+      true
+    end
+
     def parse_header reader
       kind = _read_header_kind reader
       if kind == 61
@@ -28,7 +37,9 @@ module Appmaker::Net::H2
       elsif kind == 621 || kind == 622 || kind == 623
         index = reader.read_integer(kind == 621 ? 6 : 4)
         key_name = if index == 0
-                     reader.read_string
+                     reader.read_string.tap do |x|
+                       raise HpackError.new("Header name #{x} must be lowercase") unless assert_lowercase(x)
+                     end
                    else
                      @ctx.fetch(index)[0]
                    end

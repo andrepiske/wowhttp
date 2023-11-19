@@ -28,6 +28,13 @@ module Appmaker
         super *args
       end
 
+      def mon_h2streams_length
+        @h2streams.length
+      end
+      def mon_closed_h2streams
+        @closed_h2streams.length
+      end
+
       def dump_diagnosis_info
         Debug.error("HTTP/2 connection in state=#{@state}")
         Debug.error("Settings = #{@settings}")
@@ -62,7 +69,7 @@ module Appmaker
 
       def make_frame type, bit_writer, sid: 0, flags: 0
         payload = bit_writer == nil ? '' : bit_writer.bytes_array
-        H2::Frame.new(type, flags, payload.length, sid, payload)
+        H2::Frame.new(type, flags, payload.length, sid, payload, false)
       end
 
       def mark_stream_closed sid
@@ -125,7 +132,10 @@ module Appmaker
         }[frame.type]
 
         writer = H2::BitWriter.new
-        raise "Announced frame payload length is different from actual payload" if frame.payload_length != frame.payload.length
+        if frame.payload_length != frame.payload.length
+          fr = frame
+          raise "Announced frame payload length is different from actual payload"
+        end
         writer.write_int24 frame.payload_length
         writer.write_byte int_frame_type
         writer.write_byte frame.flags

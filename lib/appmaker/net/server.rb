@@ -27,10 +27,19 @@ module Appmaker
         def initialize address, port, conf
           @address = address
           @port = port
+
+          if ::Appmaker.mon?
+            $appmaker_mon[:metrics][:wow_up] = { val: 1, tags: {
+              address: address,
+              port: port
+              } }
+          end
+
           set_conf conf
           if !conf.keys.empty?
             raise "Unrecognized configuration flags: #{conf.keys.join(', ')}\n\t#{conf}"
           end
+
         end
 
         alias_method :enable_debug_signaling?, :enable_debug_signaling
@@ -50,6 +59,11 @@ module Appmaker
           @backlog_size = conf.delete(:backlog_size) || 10
 
           @connection_send_buffer_size = conf.delete(:connection_send_buffer_size) || (16 * 1024)
+
+          if ::Appmaker.mon?
+            $appmaker_mon[:metrics][:wow_profiling] = enable_profiling? ? 1 : 0
+            $appmaker_mon[:metrics][:wow_connection_send_buffer_size] = @connection_send_buffer_size
+          end
         end
       end
 
@@ -149,6 +163,29 @@ module Appmaker
         end
       end
 
+      def calculate_monitoring_data
+        streams = 0
+        closed_streams = 0
+        write_buffer_length = 0
+        write_buffer_chunks = 0
+
+        @clients.each do |_, conn|
+          write_buffer_length += conn.mon_write_buffer_length
+          write_buffer_chunks += conn.mon_write_buffer_chunks
+          if conn.is_a?(Appmaker::Net::Http2Connection)
+            streams += conn.mon_h2streams_length
+            closed_streams += conn.mon_closed_h2streams
+          end
+        end
+
+        $appmaker_mon[:metrics].merge!({
+          streams: streams,
+          closed_streams: closed_streams,
+          write_buffer_length: write_buffer_length,
+          write_buffer_chunks: write_buffer_chunks,
+        })
+      end
+
       def iterate
         new_clients = []
         readables = []
@@ -162,6 +199,15 @@ module Appmaker
             readables << clients[monitor.io] if monitor.readable?
             writables << clients[monitor.io] if monitor.writable?
           end
+        end
+
+        if ::Appmaker.mon?
+          $appmaker_mon[:metrics][:readables] = readables.length
+          $appmaker_mon[:metrics][:writables] = writables.length
+          $appmaker_mon[:metrics][:new_clients] = new_clients.length
+          $appmaker_mon[:metrics][:clients] = clients.length
+
+          calculate_monitoring_data
         end
 
         # Debug.info("w=#{writables.length}/r=#{readables.length}/n=#{new_clients.length}/c=#{@clients.keys.length}")
@@ -185,6 +231,27 @@ module Appmaker
             Debug.info("Closing socket #{io} with closed=#{io.closed?}")
             io.close unless io.closed?
           rescue IOError
+          end
+        end
+      end
+
+      def accepted_pending_tls_connection connection, socket
+        fabricator = ConnectionFabricator.new self, @handler_klass
+
+        @lock.synchronize do
+          monitor = connection.monitor
+
+          if socket == nil
+            @selector.deregister(connection.socket)
+            begin
+              monitor.close unless monitor.closed?
+            rescue IOError
+            end
+          else
+            new_conn = fabricator.fabricate_from_pending_ssl monitor, socket
+
+            @clients[monitor.io] = new_conn
+            new_conn.go!
           end
         end
       end
