@@ -37,7 +37,7 @@ module Appmaker
         end
 
         # check for max window size
-        if (stream && stream.window_size > 2147483647) || (window_size > 2147483647)
+        if stream && stream.window_size > 2147483647
           Debug.info("Window size grew too large, terminating")
           return terminate_connection :FLOW_CONTROL_ERROR
         end

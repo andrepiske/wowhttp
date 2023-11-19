@@ -271,11 +271,7 @@ module Appmaker
 
       def send_data_frame data, end_stream: false, &block
         @window_size -= data.length
-        writer = H2::BitWriter.new
-        writer.write_bytes data
-        frame = make_frame :DATA, writer
-        frame.flags = 0x01 if end_stream
-        connection.send_frame frame, &block
+        connection.send_data_frame data, end_stream, @sid, &block
       end
 
       # TODO: replace by BufferedGear
@@ -370,7 +366,6 @@ module Appmaker
           k.call *args
         end
       end
-
     end
   end
 end

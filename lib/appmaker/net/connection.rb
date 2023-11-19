@@ -37,6 +37,23 @@ module Appmaker
         @writing_buffer.length
       end
 
+      def write_multi data_arr, &finished
+        last_idx = data_arr.length - 1
+        chunks = data_arr.map.with_index do |data, idx|
+          if idx == last_idx
+            Chunk.new(data, &finished)
+          else
+            Chunk.new(data)
+          end
+        end
+
+        @lock.synchronize do
+          @writing_buffer += chunks
+        end
+
+        _attempt_write
+      end
+
       def write data, &finished
         chunk = Chunk.new(data, &finished)
         @lock.synchronize do

@@ -2,6 +2,18 @@
 module Appmaker
   module Net
     class Http2Connection < Connection
+      FRAME_TYPE_MAP = {
+        :DATA => 0x00,
+        :HEADERS => 0x01,
+        :PRIORITY => 0x02,
+        :RST_STREAM => 0x03,
+        :SETTINGS => 0x04,
+        :PUSH_PROMISE => 0x05,
+        :PING => 0x06,
+        :GOAWAY => 0x07,
+        :WINDOW_UPDATE => 0x08
+      }.freeze
+
       include H2::FrameProcessing
 
       attr_accessor :settings
@@ -117,19 +129,28 @@ module Appmaker
         end
       end
 
+      def send_data_frame content, end_stream, stream_identifier, &block
+        writer = H2::BitWriter.new
+        writer.write_int24 content.length
+        writer.write_byte 0 # DATA
+        writer.write_byte (end_stream ? 1 : 0)
+        # writer.write_byte 0 # Stream identifier (R + finish first byte)
+        writer.write_int32 stream_identifier
+        # writer.write_bytes frame.payload
+
+        if content.length > @settings[:SETTINGS_MAX_FRAME_SIZE]
+          Debug.error("Frame payload too large")
+          binding.pry
+        end
+
+        Debug.info("\tsend DATA frame of size #{content.length} (limit #{@settings[:SETTINGS_MAX_FRAME_SIZE]})")
+        change_window_size_by(-content.length)
+
+        write_multi [writer.bytes, content], &block
+      end
+
       def send_frame frame, &block
-        # TODO: refactor and move this table out of here
-        int_frame_type = {
-          :DATA => 0x00,
-          :HEADERS => 0x01,
-          :PRIORITY => 0x02,
-          :RST_STREAM => 0x03,
-          :SETTINGS => 0x04,
-          :PUSH_PROMISE => 0x05,
-          :PING => 0x06,
-          :GOAWAY => 0x07,
-          :WINDOW_UPDATE => 0x08
-        }[frame.type]
+        int_frame_type = FRAME_TYPE_MAP[frame.type]
 
         writer = H2::BitWriter.new
         if frame.payload_length != frame.payload.length
@@ -139,9 +160,7 @@ module Appmaker
         writer.write_int24 frame.payload_length
         writer.write_byte int_frame_type
         writer.write_byte frame.flags
-        # writer.write_byte 0 # Stream identifier (R + finish first byte)
         writer.write_int32 frame.stream_identifier
-        writer.write_bytes frame.payload
 
         if frame.payload_length > @settings[:SETTINGS_MAX_FRAME_SIZE]
           Debug.error("Frame payload too large")
@@ -154,11 +173,15 @@ module Appmaker
           change_window_size_by(-frame.payload_length)
         end
 
-        if frame.type == :HEADERS && frame_data.length >= 16384 # 16KiB
-          Debug.warn("WARNING: Sending header frame over 16KiB (#{frame_data.length}B)")
+        if frame.type == :HEADERS && (frame_data.length + frame.payload_length) >= 16384 # 16KiB
+          Debug.warn("WARNING: Sending header frame over 16KiB (#{frame_data.length + frame.payload_length}B)")
         end
 
-        write frame_data, &block
+        if frame.payload_length > 0
+          write_multi [frame_data, frame.payload], &block
+        else
+          write frame_data, &block
+        end
       end
 
       def error_codes
