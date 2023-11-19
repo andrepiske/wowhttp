@@ -134,9 +134,7 @@ module Appmaker
         writer.write_int24 content.length
         writer.write_byte 0 # DATA
         writer.write_byte (end_stream ? 1 : 0)
-        # writer.write_byte 0 # Stream identifier (R + finish first byte)
         writer.write_int32 stream_identifier
-        # writer.write_bytes frame.payload
 
         if content.length > @settings[:SETTINGS_MAX_FRAME_SIZE]
           Debug.error("Frame payload too large")
